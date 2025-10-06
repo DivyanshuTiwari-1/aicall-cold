@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
-import { PhoneIcon, PlayIcon, PauseIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import { api } from '../utils/api';
+import {
+  PhoneIcon,
+  PlayIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+} from '@heroicons/react/24/outline';
+import api from '../utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const Calls = () => {
@@ -89,6 +94,7 @@ const Calls = () => {
               <option value="no_answer">No Answer</option>
             </select>
           </div>
+
           <div className="sm:w-48">
             <select
               value={outcomeFilter}
@@ -123,7 +129,7 @@ const Calls = () => {
                   <div>
                     <h3 className="font-medium text-gray-900">{call.contactName}</h3>
                     <p className="text-sm text-gray-500">
-                      {call.company}• {call.phone}
+                      {call.company} • {call.phone}
                     </p>
                     <p className="text-xs text-gray-400">{call.campaignName}</p>
                   </div>
@@ -139,16 +145,24 @@ const Calls = () => {
                       >
                         {call.status.replace('_', ' ')}
                       </span>
-                      {call.outcome && <span className="text-sm text-gray-600">{call.outcome}</span>}
+                      {call.outcome && (
+                        <span className="text-sm text-gray-600">{call.outcome}</span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-500">
-                      {formatDuration(call.duration)}• {formatDate(call.createdAt)}
+                      {formatDuration(call.duration)} • {formatDate(call.createdAt)}
                     </p>
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    {call.emotion && <span className="text-sm text-gray-600">😊{call.emotion}</span>}
-                    {call.intentScore && <span className="text-sm text-gray-600">Score: {call.intentScore}</span>}
+                    {call.emotion && (
+                      <span className="text-sm text-gray-600">😊 {call.emotion}</span>
+                    )}
+                    {call.intentScore && (
+                      <span className="text-sm text-gray-600">
+                        Score: {call.intentScore}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
