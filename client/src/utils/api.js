@@ -29,7 +29,7 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
-        if (error.response ? .status === 401) {
+        if (error.response?.status === 401) {
             // Token expired or invalid
             localStorage.removeItem('token');
             delete api.defaults.headers.common['Authorization'];
