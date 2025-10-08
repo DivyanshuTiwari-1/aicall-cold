@@ -5,10 +5,7 @@ import {
     TargetIcon,
     ChartBarIcon,
     HandThumbUpIcon,
-    PhoneIcon,
-    CheckCircleIcon,
-    CalendarIcon,
-    ClockIcon
+    CheckCircleIcon
 } from "@heroicons/react/24/outline";
 
 const ExecutiveDashboard = () => {
