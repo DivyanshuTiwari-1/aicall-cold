@@ -1,7 +1,7 @@
 const AriClient = require('ari-client');
 const logger = require('../../../utils/logger');
 
-const ARI_URL = process.env.ARI_URL || 'http://localhost:8088';
+const ARI_URL = process.env.ARI_URL || 'http://localhost:8088/ari';
 const ARI_USER = process.env.ARI_USER || 'ari_user';
 const ARI_PASS = process.env.ARI_PASS || 'ari_password';
 
@@ -20,18 +20,28 @@ async function connectAri() {
 }
 
 async function startOutboundCall({ callId, toPhone }) {
-    // Minimal stub: originate a call via Stasis app "ai-dialer"
+    // Originate call via Asterisk ARI to Telnyx endpoint
     const client = await connectAri();
     try {
+        // Use telnyx_endpoint from pjsip.conf
+        const endpoint = `PJSIP/${toPhone}@telnyx_endpoint`;
+
         await client.channels.originate({
-            endpoint: `PJSIP/${toPhone}`,
+            endpoint: endpoint,
             app: 'ai-dialer',
-            appArgs: callId
+            appArgs: callId,
+            callerId: process.env.TELNYX_DID || '+12025550123'
         });
-        logger.info(`ARI originate requested for ${toPhone} callId ${callId}`);
-        return { requested: true };
+
+        logger.info(`✅ ARI originate requested for ${toPhone} via Telnyx, callId: ${callId}`);
+        return {
+            success: true,
+            callId: callId,
+            toPhone: toPhone,
+            provider: 'telnyx'
+        };
     } catch (e) {
-        logger.error('ARI originate error', e);
+        logger.error(`❌ ARI originate error for ${toPhone}:`, e.message);
         throw e;
     }
 }

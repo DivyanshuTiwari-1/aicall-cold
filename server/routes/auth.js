@@ -14,7 +14,7 @@ const registerSchema = Joi.object({
     firstName: Joi.string().min(2).max(100).required(),
     lastName: Joi.string().min(2).max(100).required(),
     organizationName: Joi.string().min(2).max(255).required(),
-    organizationDomain: Joi.string().domain().optional()
+    organizationDomain: Joi.string().allow('', null).optional()
 });
 
 const loginSchema = Joi.object({
@@ -36,6 +36,9 @@ router.post('/register', async(req, res) => {
 
         const { email, password, firstName, lastName, organizationName, organizationDomain } = value;
 
+        // Convert empty string to null for domain
+        const domain = organizationDomain && organizationDomain.trim() !== '' ? organizationDomain.trim() : null;
+
         // Check if user already exists
         const existingUser = await query('SELECT id FROM users WHERE email = $1', [email]);
         if (existingUser.rows.length > 0) {
@@ -46,8 +49,8 @@ router.post('/register', async(req, res) => {
         }
 
         // Check if organization domain already exists
-        if (organizationDomain) {
-            const existingOrg = await query('SELECT id FROM organizations WHERE domain = $1', [organizationDomain]);
+        if (domain) {
+            const existingOrg = await query('SELECT id FROM organizations WHERE domain = $1', [domain]);
             if (existingOrg.rows.length > 0) {
                 return res.status(409).json({
                     success: false,
@@ -70,7 +73,7 @@ router.post('/register', async(req, res) => {
       SELECT new_org.id, $3, $4, $5, $6, 'admin'
       FROM new_org
       RETURNING id, organization_id, email, first_name, last_name, role
-    `, [organizationName, organizationDomain, email, passwordHash, firstName, lastName]);
+    `, [organizationName, domain, email, passwordHash, firstName, lastName]);
 
         const user = result.rows[0];
 

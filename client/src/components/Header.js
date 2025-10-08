@@ -1,43 +1,66 @@
 import React from "react";
-import { Bars3Icon, BellIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, Cog6ToothIcon } from "@heroicons/react/24/outline";
 
 const Header = ({ onMenuClick }) => {
-    return (
-        <header className="bg-white shadow-sm border-b border-gray-200">
-            <div className="flex items-center justify-between h-16 px-4">
-                <div className="flex items-center">
-                    <button
-                        onClick={onMenuClick}
-                        className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                    >
-                        <Bars3Icon className="h-6 w-6" />
-                    </button>{" "}
-                    <div className="hidden lg:block">
-                        <h2 className="text-xl font-semibold text-gray-900">AI Dialer Pro </h2>{" "}
-                    </div>{" "}
-                </div>
-                <div className="flex items-center space-x-4">
-                    {" "}
-                    {/* Notifications */}{" "}
-                    <button className="p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 relative">
-                        <BellIcon className="h-6 w-6" />
-                        <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-400 ring-2 ring-white">
-                            {" "}
-                        </span>{" "}
-                    </button>
-                    {/* User menu */}{" "}
-                    <div className="flex items-center space-x-3">
-                        <div className="text-right">
-                            <p className="text-sm font-medium text-gray-900"> John Doe </p>{" "}
-                            <p className="text-xs text-gray-500"> Admin </p>{" "}
-                        </div>{" "}
-                        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                            <span className="text-white font-medium text-sm"> JD </span>{" "}
-                        </div>{" "}
-                    </div>{" "}
-                </div>{" "}
-            </div>{" "}
-        </header>
+    return ( <
+        header className = "bg-white shadow-sm border-b border-gray-200" >
+        <
+        div className = "flex items-center justify-between h-16 px-6" >
+        <
+        div className = "flex items-center" >
+        <
+        button onClick = { onMenuClick }
+        className = "lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100" >
+        <
+        Bars3Icon className = "h-6 w-6" / >
+        <
+        /button>
+
+        { /* Logo and Brand */ } <
+        div className = "flex items-center ml-4" >
+        <
+        div className = "flex items-center" >
+        <
+        div className = "w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3" >
+        <
+        svg className = "w-5 h-5 text-white"
+        fill = "currentColor"
+        viewBox = "0 0 20 20" >
+        <
+        path d = "M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" / >
+        <
+        /svg> <
+        /div> <
+        div >
+        <
+        h1 className = "text-xl font-bold text-gray-900" > AI Dialer Pro < /h1> <
+        p className = "text-sm text-gray-500" > Emotion - Aware Voice Intelligence < /p> <
+        /div> <
+        /div> <
+        /div> <
+        /div>
+
+        { /* Status Metrics */ } <
+        div className = "flex items-center space-x-6" >
+        <
+        div className = "text-right" >
+        <
+        p className = "text-sm text-gray-500" > Credits Remaining < /p> <
+        p className = "text-lg font-semibold text-blue-600" > 8, 450 < /p> <
+        /div> <
+        div className = "text-right" >
+        <
+        p className = "text-sm text-gray-500" > Avg CSAT < /p> <
+        p className = "text-lg font-semibold text-green-600" > 4.2 / 5.0 < /p> <
+        /div> <
+        button className = "p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100" >
+        <
+        Cog6ToothIcon className = "h-6 w-6" / >
+        <
+        /button> <
+        /div> <
+        /div> <
+        /header>
     );
 };
 

@@ -21,7 +21,7 @@ router.get('/dashboard', async(req, res) => {
 
         // Get overall stats
         const statsResult = await query(`
-      SELECT 
+      SELECT
         COUNT(DISTINCT c.id) as total_campaigns,
         COUNT(DISTINCT ct.id) as total_contacts,
         COUNT(cl.id) as total_calls,
@@ -45,7 +45,7 @@ router.get('/dashboard', async(req, res) => {
 
         // Get recent calls
         const recentCallsResult = await query(`
-      SELECT 
+      SELECT
         cl.id,
         cl.status,
         cl.outcome,
@@ -80,7 +80,7 @@ router.get('/dashboard', async(req, res) => {
 
         // Get campaign performance
         const campaignStatsResult = await query(`
-      SELECT 
+      SELECT
         cp.id,
         cp.name,
         COUNT(cl.id) as total_calls,
@@ -107,8 +107,7 @@ router.get('/dashboard', async(req, res) => {
             avgDuration: parseFloat(campaign.avg_duration),
             totalCost: parseFloat(campaign.total_cost),
             conversionRate: campaign.total_calls > 0 ?
-                ((parseInt(campaign.scheduled_calls) + parseInt(campaign.interested_calls)) / parseInt(campaign.total_calls) * 100).toFixed(2) :
-                0
+                ((parseInt(campaign.scheduled_calls) + parseInt(campaign.interested_calls)) / parseInt(campaign.total_calls) * 100).toFixed(2) : 0
         }));
 
         res.json({
@@ -161,7 +160,7 @@ router.get('/roi', async(req, res) => {
         }
 
         const roiResult = await query(`
-      SELECT 
+      SELECT
         COUNT(cl.id) as total_calls,
         COUNT(CASE WHEN cl.outcome = 'scheduled' THEN 1 END) as scheduled_calls,
         COUNT(CASE WHEN cl.outcome = 'interested' THEN 1 END) as interested_calls,
@@ -169,6 +168,7 @@ router.get('/roi', async(req, res) => {
         COALESCE(AVG(cl.duration), 0) as avg_duration
       FROM calls cl
       JOIN contacts ct ON cl.contact_id = ct.id
+      JOIN campaigns c ON cl.campaign_id = c.id
       ${whereClause}
     `, params);
 

@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createServer } = require('http');
 const { WebSocketServer } = require('ws');
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const authRoutes = require('./routes/auth');
 const campaignRoutes = require('./routes/campaigns');
@@ -14,6 +14,8 @@ const analyticsRoutes = require('./routes/analytics');
 const dncRoutes = require('./routes/dnc');
 const knowledgeRoutes = require('./routes/knowledge');
 const mlRoutes = require('./routes/ml');
+const scriptRoutes = require('./routes/scripts');
+const conversationRoutes = require('./routes/conversation');
 // Initialize telephony provider early
 require('./services/telephony');
 
@@ -65,6 +67,8 @@ app.use('/api/v1/analytics', authenticateToken, analyticsRoutes);
 app.use('/api/v1/dnc', authenticateToken, dncRoutes);
 app.use('/api/v1/knowledge', authenticateToken, knowledgeRoutes);
 app.use('/api/v1/ml', authenticateToken, mlRoutes);
+app.use('/api/v1/scripts', authenticateToken, scriptRoutes);
+app.use('/api/v1/conversation', authenticateToken, conversationRoutes);
 
 // WebSocket connection handling
 wss.on('connection', (ws, req) => {

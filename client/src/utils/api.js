@@ -7,6 +7,9 @@ const api = axios.create({
     headers: {
         "Content-Type": "application/json",
     },
+    maxRedirects: 5,
+    maxContentLength: 50 * 1024 * 1024, // 50MB
+    maxBodyLength: 50 * 1024 * 1024, // 50MB
 });
 
 // Request interceptor
@@ -29,11 +32,18 @@ api.interceptors.response.use(
         return response;
     },
     error => {
-        if (error.response?.status === 401) {
+        if (error.response && error.response.status === 401) {
             // Token expired or invalid
             localStorage.removeItem("token");
             delete api.defaults.headers.common["Authorization"];
             window.location.href = "/login";
+        } else if (error.response && error.response.status === 431) {
+            // Request header fields too large
+            console.error("Request headers too large, clearing localStorage");
+            localStorage.clear();
+            delete api.defaults.headers.common["Authorization"];
+            // Reload page to reset state
+            window.location.reload();
         }
         return Promise.reject(error);
     }

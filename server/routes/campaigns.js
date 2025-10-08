@@ -53,7 +53,7 @@ router.post('/', async(req, res) => {
 
         const result = await query(`
       INSERT INTO campaigns (
-        organization_id, name, type, voice_persona, auto_retry, 
+        organization_id, name, type, voice_persona, auto_retry,
         best_time_enabled, emotion_detection, script_id, settings
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -107,7 +107,7 @@ router.get('/', async(req, res) => {
     try {
         const { status, type, limit = 50, offset = 0 } = req.query;
 
-        let whereClause = 'WHERE organization_id = $1';
+        let whereClause = 'WHERE c.organization_id = $1';
         const params = [req.organizationId];
         let paramCount = 1;
 
@@ -124,7 +124,7 @@ router.get('/', async(req, res) => {
         }
 
         const result = await query(`
-      SELECT 
+      SELECT
         c.*,
         COUNT(ct.id) as contact_count,
         COUNT(cl.id) as call_count,
@@ -181,7 +181,7 @@ router.get('/:id', async(req, res) => {
         const { id } = req.params;
 
         const result = await query(`
-      SELECT 
+      SELECT
         c.*,
         COUNT(ct.id) as contact_count,
         COUNT(cl.id) as call_count,
@@ -286,7 +286,7 @@ router.put('/:id', async(req, res) => {
         params.push(id, req.organizationId);
 
         const result = await query(`
-      UPDATE campaigns 
+      UPDATE campaigns
       SET ${updates.join(', ')}
       WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
       RETURNING *

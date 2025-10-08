@@ -13,10 +13,20 @@
         "migrate": "cd server && npm run migrate",
         "seed": "cd server && npm run seed"
     },
-    "keywords": ["ai", "cold-calling", "sales", "recruitment", "twilio", "openai"],
+    "keywords": [
+        "ai",
+        "cold-calling",
+        "sales",
+        "recruitment",
+        "twilio",
+        "openai"
+    ],
     "author": "AI Dialer Team",
     "license": "MIT",
     "devDependencies": {
         "concurrently": "^8.2.2"
+    },
+    "dependencies": {
+        "axios": "^1.12.2"
     }
 }

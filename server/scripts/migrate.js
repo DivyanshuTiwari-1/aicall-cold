@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -113,10 +114,12 @@ async function createTables() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
-        type VARCHAR(50) NOT NULL,
+        type VARCHAR(50) NOT NULL CHECK (type IN ('main_pitch', 'follow_up', 'objection_handling', 'closing')),
         content TEXT NOT NULL,
         variables JSONB DEFAULT '{}',
         is_active BOOLEAN DEFAULT true,
+        category VARCHAR(100),
+        confidence_threshold DECIMAL(3,2) DEFAULT 0.7,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -205,7 +208,7 @@ async function seedData() {
 
         // Create sample organization
         const orgResult = await query(`
-      INSERT INTO organizations (id, name, domain, settings) 
+      INSERT INTO organizations (id, name, domain, settings)
       VALUES ('550e8400-e29b-41d4-a716-446655440000', 'Demo Company', 'demo.com', '{"timezone": "UTC", "features": ["emotion_detection", "voice_cloning"]}')
       ON CONFLICT (id) DO NOTHING
       RETURNING id
@@ -216,14 +219,14 @@ async function seedData() {
         const hashedPassword = await bcrypt.hash('password123', 10);
 
         await query(`
-      INSERT INTO users (id, organization_id, email, password_hash, first_name, last_name, role) 
+      INSERT INTO users (id, organization_id, email, password_hash, first_name, last_name, role)
       VALUES ('550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440000', 'admin@demo.com', $1, 'Admin', 'User', 'admin')
       ON CONFLICT (email) DO NOTHING
     `, [hashedPassword]);
 
         // Create sample campaign
         await query(`
-      INSERT INTO campaigns (id, organization_id, name, type, status, voice_persona, settings) 
+      INSERT INTO campaigns (id, organization_id, name, type, status, voice_persona, settings)
       VALUES ('550e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440000', 'Q4 Sales Outreach', 'sales', 'active', 'professional', '{"max_retries": 3, "retry_delay": 3600}')
       ON CONFLICT (id) DO NOTHING
     `);

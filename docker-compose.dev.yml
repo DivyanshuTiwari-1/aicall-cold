@@ -5,6 +5,7 @@ services:
   postgres:
     image: postgres:15
     container_name: ai-dialer-postgres
+    restart: always
     environment:
       POSTGRES_DB: ai_dialer
       POSTGRES_USER: postgres
@@ -12,34 +13,69 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: ai-dialer-redis
+    restart: always
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # pgAdmin (Database Management)
+  # Backend Node.js API
+  backend:
+    build:
+      context: ./server
+    container_name: ai-dialer-backend
+    restart: always
+    env_file:
+      - ./server/.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./server:/usr/src/app
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./client
+    container_name: ai-dialer-frontend
+    restart: always
+    environment:
+      REACT_APP_API_URL: http://localhost:3000/api/v1
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    volumes:
+      - ./client:/usr/src/app
+
+  # pgAdmin
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: ai-dialer-pgadmin
+    restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: admin@localhost.com
+      PGADMIN_DEFAULT_PASSWORD: postgres
     ports:
       - "5050:80"
     depends_on:
@@ -48,10 +84,11 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
-  # Redis Commander (Redis Management)
+  # Redis Commander
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: ai-dialer-redis-commander
+    restart: always
     environment:
       REDIS_HOSTS: local:redis:6379
     ports:
@@ -64,4 +101,3 @@ volumes:
   postgres_data:
   redis_data:
   pgadmin_data:
-

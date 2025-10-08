@@ -243,30 +243,30 @@ router.get('/', async(req, res) => {
             offset = 0
         } = req.query;
 
-        let whereClause = 'WHERE organization_id = $1';
+        let whereClause = 'WHERE c.organization_id = $1';
         const params = [req.organizationId];
         let paramCount = 1;
 
         if (campaign_id) {
             paramCount++;
-            whereClause += ` AND campaign_id = $${paramCount}`;
+            whereClause += ` AND c.campaign_id = $${paramCount}`;
             params.push(campaign_id);
         }
 
         if (status) {
             paramCount++;
-            whereClause += ` AND status = $${paramCount}`;
+            whereClause += ` AND c.status = $${paramCount}`;
             params.push(status);
         }
 
         if (search) {
             paramCount++;
-            whereClause += ` AND (first_name ILIKE $${paramCount} OR last_name ILIKE $${paramCount} OR phone ILIKE $${paramCount} OR email ILIKE $${paramCount} OR company ILIKE $${paramCount})`;
+            whereClause += ` AND (c.first_name ILIKE $${paramCount} OR c.last_name ILIKE $${paramCount} OR c.phone ILIKE $${paramCount} OR c.email ILIKE $${paramCount} OR c.company ILIKE $${paramCount})`;
             params.push(`%${search}%`);
         }
 
         const result = await query(`
-      SELECT 
+      SELECT
         c.*,
         COUNT(cl.id) as call_count,
         MAX(cl.created_at) as last_call_date
@@ -323,7 +323,7 @@ router.get('/:id', async(req, res) => {
         const { id } = req.params;
 
         const result = await query(`
-      SELECT 
+      SELECT
         c.*,
         COUNT(cl.id) as call_count,
         MAX(cl.created_at) as last_call_date
@@ -436,7 +436,7 @@ router.put('/:id', async(req, res) => {
         params.push(id, req.organizationId);
 
         const result = await query(`
-      UPDATE contacts 
+      UPDATE contacts
       SET ${updates.join(', ')}
       WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
       RETURNING *

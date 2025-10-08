@@ -1,328 +1,264 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from 'react-query';
+import React from "react";
 import {
-  PlusIcon,
-  PencilIcon,
-  TrashIcon,
-  PlayIcon,
-  PauseIcon,
-} from '@heroicons/react/24/outline';
-import api from '../utils/api';
-import LoadingSpinner from '../components/LoadingSpinner';
-import toast from 'react-hot-toast';
+    PlusIcon,
+    PlayIcon,
+    PauseIcon,
+    ArrowPathIcon,
+    ClockIcon,
+    MegaphoneIcon,
+    UserGroupIcon,
+    CalendarIcon,
+    CurrencyDollarIcon
+} from "@heroicons/react/24/outline";
 
 const Campaigns = () => {
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const queryClient = useQueryClient();
+    const campaigns = [{
+            id: 1,
+            name: "Q4 Sales Outreach",
+            type: "Sales Outreach",
+            status: "active",
+            features: ["Auto-Retry", "Smart Timing"],
+            metrics: {
+                totalLeads: 500,
+                completed: 234,
+                scheduled: 150,
+                voicePersona: "professional",
+                creditsUsed: 1872
+            },
+            progress: 45,
+            actions: ["play", "pause"]
+        },
+        {
+            id: 2,
+            name: "Developer Screening",
+            type: "Recruitment Screening",
+            status: "active",
+            features: ["Auto-Retry"],
+            metrics: {
+                totalLeads: 150,
+                completed: 89,
+                scheduled: 45,
+                voicePersona: "empathetic",
+                creditsUsed: 712
+            },
+            progress: 60,
+            actions: ["play", "pause"]
+        }
+    ];
 
-  const { data: campaigns, isLoading, error } = useQuery('campaigns', () =>
-    api.get('/campaigns').then((res) => res.data)
-  );
+    return ( <
+            div className = "space-y-6" >
+            <
+            div className = "flex items-center justify-between" >
+            <
+            div >
+            <
+            h1 className = "text-2xl font-bold text-gray-900" > Campaigns < /h1> < /
+            div > <
+            button className = "flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" >
+            <
+            PlusIcon className = "h-4 w-4 mr-2" / >
+            Create Campaign <
+            /button> < /
+            div >
 
-  const createMutation = useMutation((campaignData) => api.post('/campaigns', campaignData), {
-    onSuccess: () => {
-      queryClient.invalidateQueries('campaigns');
-      setShowCreateModal(false);
-      toast.success('Campaign created successfully!');
-    },
-    onError: (error) => {
-      toast.error(error?.response?.data?.message || 'Failed to create campaign');
-    },
-  });
+            { /* Campaign Cards */ } <
+            div className = "grid grid-cols-1 lg:grid-cols-2 gap-6" > {
+                campaigns.map((campaign) => ( <
+                        div key = { campaign.id }
+                        className = "bg-gray-50 rounded-lg p-6 border border-gray-200" >
+                        <
+                        div className = "flex items-start justify-between mb-4" >
+                        <
+                        div className = "flex-1" >
+                        <
+                        h3 className = "text-lg font-semibold text-gray-900 mb-2" > { campaign.name } < /h3> <
+                        div className = "flex flex-wrap gap-2 mb-3" >
+                        <
+                        span className = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" > { campaign.type } <
+                        /span> <
+                        span className = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" > { campaign.status } <
+                        /span> {
+                        campaign.features.map((feature, index) => ( <
+                            span key = { index }
+                            className = { `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                            feature === 'Auto-Retry'
+                                                ? 'bg-purple-100 text-purple-800'
+                                                : 'bg-orange-100 text-orange-800'
+                                        }` } > { feature } <
+                            /span>
+                        ))
+                    } <
+                    /div> < /
+                    div > <
+                    div className = "flex items-center space-x-2" >
+                    <
+                    button className = "p-2 text-green-600 hover:bg-green-100 rounded-lg" >
+                    <
+                    PlayIcon className = "h-5 w-5" / >
+                    <
+                    /button> <
+                    button className = "p-2 text-orange-600 hover:bg-orange-100 rounded-lg" >
+                    <
+                    PauseIcon className = "h-5 w-5" / >
+                    <
+                    /button> < /
+                    div > <
+                    /div>
 
-  const updateMutation = useMutation(
-    ({ id, data }) => api.put(`/campaigns/${id}`, data),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('campaigns');
-        toast.success('Campaign updated successfully!');
-      },
-      onError: (error) => {
-        toast.error(error?.response?.data?.message || 'Failed to update campaign');
-      },
-    }
-  );
+                    { /* Metrics Grid */ } <
+                    div className = "grid grid-cols-2 gap-4 mb-4" >
+                    <
+                    div >
+                    <
+                    p className = "text-sm text-gray-600" > Total Leads < /p> <
+                    p className = "text-lg font-semibold text-gray-900" > { campaign.metrics.totalLeads } < /p> < /
+                    div > <
+                    div >
+                    <
+                    p className = "text-sm text-gray-600" > Completed < /p> <
+                    p className = "text-lg font-semibold text-green-600" > { campaign.metrics.completed } < /p> < /
+                    div > <
+                    div >
+                    <
+                    p className = "text-sm text-gray-600" > Scheduled < /p> <
+                    p className = "text-lg font-semibold text-blue-600" > { campaign.metrics.scheduled } < /p> < /
+                    div > <
+                    div >
+                    <
+                    p className = "text-sm text-gray-600" > Voice Persona < /p> <
+                    p className = "text-lg font-semibold text-purple-600" > { campaign.metrics.voicePersona } < /p> < /
+                    div > <
+                    /div>
 
-  const deleteMutation = useMutation((id) => api.delete(`/campaigns/${id}`), {
-    onSuccess: () => {
-      queryClient.invalidateQueries('campaigns');
-      toast.success('Campaign deleted successfully!');
-    },
-    onError: (error) => {
-      toast.error(error?.response?.data?.message || 'Failed to delete campaign');
-    },
-  });
+                    { /* Progress Bar */ } <
+                    div className = "mb-4" >
+                    <
+                    div className = "flex items-center justify-between text-sm text-gray-600 mb-1" >
+                    <
+                    span > Progress < /span> <
+                    span > { Math.round((campaign.metrics.completed / campaign.metrics.totalLeads) * 100) } % < /span> < /
+                    div > <
+                    div className = "w-full bg-gray-200 rounded-full h-2" >
+                    <
+                    div className = "bg-blue-600 h-2 rounded-full"
+                    style = {
+                        { width: `${campaign.progress}%` }
+                    } >
+                    <
+                    /div> < /
+                    div > <
+                    /div>
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error)
-    return (
-      <div className="text-center py-12">
-        <p className="text-red-600">Failed to load campaigns</p>
-      </div>
-    );
+                    { /* Credits Used */ } <
+                    div className = "flex items-center justify-between" >
+                    <
+                    span className = "text-sm text-gray-600" > Credits Used < /span> <
+                    span className = "text-sm font-semibold text-orange-600" > { campaign.metrics.creditsUsed } < /span> < /
+                    div > <
+                    /div>
+                ))
+        } <
+        /div>
 
-  const handleStatusToggle = (campaign) => {
-    const newStatus = campaign.status === 'active' ? 'paused' : 'active';
-    updateMutation.mutate({ id: campaign.id, data: { status: newStatus } });
-  };
+    { /* Additional Analytics Sections */ } <
+    div className = "grid grid-cols-1 lg:grid-cols-2 gap-6" > { /* Top Objections Handled */ } <
+        div className = "bg-white rounded-lg shadow-sm p-6" >
+        <
+        h3 className = "text-lg font-semibold text-gray-900 mb-4" > Top Objections Handled < /h3> <
+    div className = "space-y-4" > {
+            [
+                { objection: "Price concerns", frequency: 89, resolved: 76 },
+                { objection: "Timing issues", frequency: 67, resolved: 82 },
+                { objection: "Feature gaps", frequency: 45, resolved: 68 },
+                { objection: "Competitor comparison", frequency: 34, resolved: 71 }
+            ].map((item, index) => ( <
+                div key = { index }
+                className = "space-y-2" >
+                <
+                div className = "flex items-center justify-between" >
+                <
+                span className = "text-sm font-medium text-gray-900" > { item.objection } < /span> <
+                span className = "text-sm text-gray-600" > { item.frequency }
+                times < /span> < /
+                div > <
+                div className = "flex items-center justify-between" >
+                <
+                div className = "flex-1 bg-gray-200 rounded-full h-2 mr-4" >
+                <
+                div className = "bg-blue-600 h-2 rounded-full"
+                style = {
+                    { width: `${item.resolved}%` }
+                } >
+                <
+                /div> < /
+                div > <
+                span className = "text-sm font-medium text-blue-600" > { item.resolved } % resolved < /span> < /
+                div > <
+                /div>
+            ))
+        } <
+        /div> < /
+        div >
 
-  const handleDelete = (campaign) => {
-    if (window.confirm(`Are you sure you want to delete "${campaign.name}"?`)) {
-      deleteMutation.mutate(campaign.id);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-          <p className="text-gray-600">Manage your calling campaigns</p>
-        </div>
-        <button onClick={() => setShowCreateModal(true)} className="btn-primary flex items-center">
-          <PlusIcon className="h-5 w-5 mr-2" />
-          Create Campaign
-        </button>
-      </div>
-
-      {/* Campaigns Grid */}
-      {campaigns?.campaigns?.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="mx-auto h-12 w-12 text-gray-400">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0
-                 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5
-                 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0
-                 012 2v2M7 7h10"
-              />
-            </svg>
-          </div>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No campaigns</h3>
-          <p className="mt-1 text-sm text-gray-500">Get started by creating a new campaign.</p>
-          <div className="mt-6">
-            <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-              Create Campaign
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {campaigns?.campaigns?.map((campaign) => (
-            <div key={campaign.id} className="card">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{campaign.name}</h3>
-                  <p className="text-sm text-gray-500 capitalize">{campaign.type} Campaign</p>
-                </div>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    campaign.status === 'active'
-                      ? 'bg-green-100 text-green-800'
-                      : campaign.status === 'paused'
-                      ? 'bg-yellow-100 text-yellow-800'
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  {campaign.status}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{campaign.contactCount}</p>
-                  <p className="text-sm text-gray-500">Contacts</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{campaign.callCount}</p>
-                  <p className="text-sm text-gray-500">Calls</p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => handleStatusToggle(campaign)}
-                    className={`p-2 rounded-lg ${
-                      campaign.status === 'active'
-                        ? 'text-yellow-600 hover:bg-yellow-50'
-                        : 'text-green-600 hover:bg-green-50'
-                    }`}
-                    title={campaign.status === 'active' ? 'Pause' : 'Resume'}
-                  >
-                    {campaign.status === 'active' ? (
-                      <PauseIcon className="h-4 w-4" />
-                    ) : (
-                      <PlayIcon className="h-4 w-4" />
-                    )}
-                  </button>
-                  <button
-                    className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg"
-                    title="Edit"
-                  >
-                    <PencilIcon className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(campaign)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                    title="Delete"
-                  >
-                    <TrashIcon className="h-4 w-4" />
-                  </button>
-                </div>
-                <button className="text-sm text-blue-600 hover:text-blue-700">View Details</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Create Campaign Modal */}
-      {showCreateModal && (
-        <CreateCampaignModal
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={createMutation.mutate}
-          loading={createMutation.isLoading}
-        />
-      )}
-    </div>
-  );
-};
-
-const CreateCampaignModal = ({ onClose, onSubmit, loading }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    type: 'sales',
-    voice_persona: 'professional',
-    auto_retry: true,
-    best_time_enabled: true,
-    emotion_detection: true,
-  });
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value,
-    });
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSubmit(formData);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen text-center">
-        <div
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-          onClick={onClose}
-        />
-        <div className="inline-block bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:max-w-lg sm:w-full">
-          <form onSubmit={handleSubmit}>
-            <div className="p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Create New Campaign</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="label">Campaign Name</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="input-field"
-                    placeholder="Q4 Sales Outreach"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="label">Campaign Type</label>
-                  <select
-                    name="type"
-                    value={formData.type}
-                    onChange={handleChange}
-                    className="input-field"
-                  >
-                    <option value="sales">Sales</option>
-                    <option value="recruitment">Recruitment</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Voice Persona</label>
-                  <select
-                    name="voice_persona"
-                    value={formData.voice_persona}
-                    onChange={handleChange}
-                    className="input-field"
-                  >
-                    <option value="professional">Professional</option>
-                    <option value="friendly">Friendly</option>
-                    <option value="authoritative">Authoritative</option>
-                  </select>
-                </div>
-                <div className="space-y-3">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="auto_retry"
-                      checked={formData.auto_retry}
-                      onChange={handleChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      Auto-retry failed calls
-                    </span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="best_time_enabled"
-                      checked={formData.best_time_enabled}
-                      onChange={handleChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      Enable best time prediction
-                    </span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="emotion_detection"
-                      checked={formData.emotion_detection}
-                      onChange={handleChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      Enable emotion detection
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 px-4 py-3 flex justify-end space-x-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn-primary"
-              >
-                {loading ? <LoadingSpinner size="sm" /> : 'Create Campaign'}
-              </button>
-              <button type="button" onClick={onClose} className="btn-secondary">
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+        { /* Best Time to Call */ } <
+        div className = "bg-white rounded-lg shadow-sm p-6" >
+        <
+        h3 className = "text-lg font-semibold text-gray-900 mb-4 flex items-center" >
+        <
+        ClockIcon className = "h-5 w-5 text-purple-600 mr-2" / >
+        Best Time to Call(Success Rate) <
+        /h3> <
+    div className = "space-y-4" > {
+            [
+                { time: "10:00 AM - 11:00 AM", calls: 142, success: 78 },
+                { time: "2:00 PM - 3:00 PM", calls: 189, success: 72 },
+                { time: "11:00 AM - 12:00 PM", calls: 156, success: 68 },
+                { time: "4:00 PM - 5:00 PM", calls: 98, success: 54 },
+                { time: "9:00 AM - 10:00 AM", calls: 67, success: 48 }
+            ].map((item, index) => ( <
+                div key = { index }
+                className = "space-y-2" >
+                <
+                div className = "flex items-center justify-between" >
+                <
+                div className = "flex items-center" >
+                <
+                ClockIcon className = "h-4 w-4 text-gray-400 mr-2" / >
+                <
+                span className = "text-sm font-medium text-gray-900" > { item.time } < /span> < /
+                div > <
+                span className = "text-sm text-gray-600" > { item.calls }
+                calls < /span> < /
+                div > <
+                div className = "flex items-center justify-between" >
+                <
+                div className = "flex-1 bg-gray-200 rounded-full h-2 mr-4" >
+                <
+                div className = "bg-purple-600 h-2 rounded-full"
+                style = {
+                    { width: `${item.success}%` }
+                } >
+                <
+                /div> < /
+                div > <
+                span className = "text-sm font-medium text-purple-600" > { item.success } % < /span> < /
+                div > <
+                /div>
+            ))
+        } <
+        /div> <
+    div className = "mt-4 bg-purple-50 rounded-lg p-3" >
+        <
+        p className = "text-sm text-purple-800" >
+        <
+        span className = "font-medium" > AI Insight: < /span> Scheduling calls between 10-11 AM increases success rate by 32% < /
+        p > <
+        /div> < /
+        div > <
+        /div> < /
+        div >
+);
 };
 
 export default Campaigns;

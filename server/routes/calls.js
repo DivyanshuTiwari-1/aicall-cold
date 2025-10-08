@@ -77,12 +77,12 @@ router.post('/start', async(req, res) => {
             });
         }
 
-        // Create call record
+        // Create call record with initial cost calculation
         const result = await query(`
-      INSERT INTO calls (organization_id, campaign_id, contact_id, status)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO calls (organization_id, campaign_id, contact_id, status, cost)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
-    `, [req.organizationId, campaign_id, contact_id, 'initiated']);
+    `, [req.organizationId, campaign_id, contact_id, 'initiated', 0.0045]); // $0.0045 per 5 minutes base cost
 
         const call = result.rows[0];
 
@@ -135,8 +135,10 @@ router.post('/start', async(req, res) => {
 });
 
 // Complete a call
-router.post('/complete', async(req, res) => {
+router.post('/complete/:call_id', async(req, res) => {
     try {
+        const { call_id } = req.params;
+
         const { error, value } = completeCallSchema.validate(req.body);
         if (error) {
             return res.status(400).json({
@@ -146,7 +148,7 @@ router.post('/complete', async(req, res) => {
             });
         }
 
-        const { call_id, ...callData } = req.body;
+        const callData = value;
 
         // Verify call exists and belongs to organization
         const callCheck = await query(
@@ -169,6 +171,13 @@ router.post('/complete', async(req, res) => {
             });
         }
 
+        // Calculate cost based on duration (if provided)
+        let calculatedCost = 0.0045; // Base cost
+        if (callData.duration) {
+            // $0.0045 per 5 minutes, so $0.0009 per minute
+            calculatedCost = (callData.duration / 60) * 0.0009;
+        }
+
         // Update call with completion data
         const updates = [];
         const params = [];
@@ -182,11 +191,16 @@ router.post('/complete', async(req, res) => {
             }
         });
 
+        // Add cost calculation
+        paramCount++;
+        updates.push(`cost = $${paramCount}`);
+        params.push(calculatedCost);
+
         updates.push(`updated_at = CURRENT_TIMESTAMP`);
         params.push(call_id, req.organizationId);
 
         const result = await query(`
-      UPDATE calls 
+      UPDATE calls
       SET ${updates.join(', ')}
       WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
       RETURNING *
@@ -283,7 +297,7 @@ router.get('/', async(req, res) => {
         }
 
         const result = await query(`
-      SELECT 
+      SELECT
         c.*,
         ct.first_name,
         ct.last_name,
@@ -344,7 +358,7 @@ router.get('/:id', async(req, res) => {
         const { id } = req.params;
 
         const result = await query(`
-      SELECT 
+      SELECT
         c.*,
         ct.first_name,
         ct.last_name,
@@ -399,6 +413,196 @@ router.get('/:id', async(req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch call'
+        });
+    }
+});
+
+// Update call status (for real-time updates)
+router.put('/:id/status', async(req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, duration, transcript, emotion, intent_score } = req.body;
+
+        // Verify call exists and belongs to organization
+        const callCheck = await query(
+            'SELECT id, status FROM calls WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
+        );
+
+        if (callCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Call not found'
+            });
+        }
+
+        // Calculate cost based on current duration
+        let calculatedCost = 0.0045; // Base cost
+        if (duration) {
+            calculatedCost = (duration / 60) * 0.0009;
+        }
+
+        // Update call status and real-time data
+        const updates = [];
+        const params = [];
+        let paramCount = 0;
+
+        if (status) {
+            paramCount++;
+            updates.push(`status = $${paramCount}`);
+            params.push(status);
+        }
+
+        if (duration !== undefined) {
+            paramCount++;
+            updates.push(`duration = $${paramCount}`);
+            params.push(duration);
+        }
+
+        if (transcript) {
+            paramCount++;
+            updates.push(`transcript = $${paramCount}`);
+            params.push(transcript);
+        }
+
+        if (emotion) {
+            paramCount++;
+            updates.push(`emotion = $${paramCount}`);
+            params.push(emotion);
+        }
+
+        if (intent_score !== undefined) {
+            paramCount++;
+            updates.push(`intent_score = $${paramCount}`);
+            params.push(intent_score);
+        }
+
+        // Update cost
+        paramCount++;
+        updates.push(`cost = $${paramCount}`);
+        params.push(calculatedCost);
+
+        updates.push(`updated_at = CURRENT_TIMESTAMP`);
+        params.push(id, req.organizationId);
+
+        const result = await query(`
+            UPDATE calls
+            SET ${updates.join(', ')}
+            WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
+            RETURNING *
+        `, params);
+
+        const call = result.rows[0];
+
+        // Log status update event
+        await query(`
+            INSERT INTO call_events (call_id, event_type, event_data)
+            VALUES ($1, $2, $3)
+        `, [call.id, 'status_update', JSON.stringify({
+            status: call.status,
+            duration: call.duration,
+            emotion: call.emotion,
+            intent_score: call.intent_score,
+            cost: call.cost,
+            timestamp: new Date().toISOString()
+        })]);
+
+        res.json({
+            success: true,
+            message: 'Call status updated successfully',
+            call: {
+                id: call.id,
+                status: call.status,
+                duration: call.duration,
+                transcript: call.transcript,
+                emotion: call.emotion,
+                intentScore: call.intent_score,
+                cost: call.cost,
+                updatedAt: call.updated_at
+            }
+        });
+
+    } catch (error) {
+        logger.error('Call status update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update call status'
+        });
+    }
+});
+
+// Get call conversation context
+router.get('/:id/conversation', async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Get call details
+        const callResult = await query(`
+            SELECT c.*, ct.first_name, ct.last_name, ct.company, cp.name as campaign_name
+            FROM calls c
+            JOIN contacts ct ON c.contact_id = ct.id
+            JOIN campaigns cp ON c.campaign_id = cp.id
+            WHERE c.id = $1 AND c.organization_id = $2
+        `, [id, req.organizationId]);
+
+        if (callResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Call not found'
+            });
+        }
+
+        const call = callResult.rows[0];
+
+        // Get conversation history
+        const historyResult = await query(`
+            SELECT event_data, timestamp
+            FROM call_events
+            WHERE call_id = $1 AND event_type = 'ai_conversation'
+            ORDER BY timestamp ASC
+        `, [id]);
+
+        // Get active scripts
+        const scriptsResult = await query(`
+            SELECT type, content, variables, confidence_threshold
+            FROM scripts
+            WHERE organization_id = $1 AND is_active = true
+            ORDER BY type
+        `, [req.organizationId]);
+
+        const scripts = {};
+        scriptsResult.rows.forEach(script => {
+            scripts[script.type] = {
+                content: script.content,
+                variables: script.variables,
+                confidence_threshold: script.confidence_threshold
+            };
+        });
+
+        res.json({
+            success: true,
+            call: {
+                id: call.id,
+                status: call.status,
+                duration: call.duration,
+                transcript: call.transcript,
+                emotion: call.emotion,
+                intentScore: call.intent_score,
+                contactName: `${call.first_name} ${call.last_name}`,
+                company: call.company,
+                campaignName: call.campaign_name
+            },
+            conversationHistory: historyResult.rows.map(row => ({
+                ...row.event_data,
+                timestamp: row.timestamp
+            })),
+            availableScripts: scripts
+        });
+
+    } catch (error) {
+        logger.error('Call conversation context error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch call conversation context'
         });
     }
 });
