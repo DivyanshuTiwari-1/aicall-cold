@@ -6,21 +6,22 @@ import {
   CheckCircleIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
-import api from '../utils/api';
+import { contactsAPI } from '../services/contacts';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-const Calls = () => {
+const Contacts = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState('');
+  const [campaignFilter, setCampaignFilter] = useState('');
 
-  const { data: calls, isLoading, error } = useQuery(
-    ['calls', { status: statusFilter, outcome: outcomeFilter }],
+  const { data: contactsData, isLoading, error } = useQuery(
+    ['contacts', { status: statusFilter, outcome: outcomeFilter, campaign: campaignFilter }],
     () =>
-      api
-        .get('/calls', {
-          params: { status: statusFilter, outcome: outcomeFilter },
-        })
-        .then((res) => res.data)
+      contactsAPI.getContacts({
+        status: statusFilter,
+        outcome: outcomeFilter,
+        campaign_id: campaignFilter,
+      })
   );
 
   const getStatusIcon = (status) => {
@@ -69,7 +70,7 @@ const Calls = () => {
       </div>
     );
 
-  const callList = calls?.calls || [];
+  const callList = contactsData?.calls || [];
 
   return (
     <div className="space-y-6">
@@ -80,13 +81,13 @@ const Calls = () => {
       </div>
 
       {/* Filters */}
-      <div className="card">
+      <div className="card p-4">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="sm:w-48">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-field"
+              className="input-field w-full"
             >
               <option value="">All Status</option>
               <option value="completed">Completed</option>
@@ -101,7 +102,7 @@ const Calls = () => {
             <select
               value={outcomeFilter}
               onChange={(e) => setOutcomeFilter(e.target.value)}
-              className="input-field"
+              className="input-field w-full"
             >
               <option value="">All Outcomes</option>
               <option value="scheduled">Scheduled</option>
@@ -124,7 +125,7 @@ const Calls = () => {
           </div>
         ) : (
           callList.map((call) => (
-            <div key={call.id} className="card">
+            <div key={call.id} className="card p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   {getStatusIcon(call.status)}
@@ -147,7 +148,9 @@ const Calls = () => {
                       >
                         {call.status.replace('_', ' ')}
                       </span>
-                      {call.outcome && <span className="text-sm text-gray-600">{call.outcome}</span>}
+                      {call.outcome && (
+                        <span className="text-sm text-gray-600">{call.outcome}</span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-500">
                       {formatDuration(call.duration)} • {formatDate(call.createdAt)}
@@ -156,9 +159,7 @@ const Calls = () => {
 
                   <div className="flex items-center space-x-2">
                     {call.emotion && <span className="text-sm text-gray-600">😊{call.emotion}</span>}
-                    {call.intentScore && (
-                      <span className="text-sm text-gray-600">Score: {call.intentScore}</span>
-                    )}
+                    {call.intentScore && <span className="text-sm text-gray-600">Score: {call.intentScore}</span>}
                   </div>
                 </div>
               </div>
@@ -176,4 +177,4 @@ const Calls = () => {
   );
 };
 
-export default Calls;
+export default Contacts;

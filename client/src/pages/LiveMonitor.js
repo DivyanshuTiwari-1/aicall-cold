@@ -1,464 +1,434 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
-    PhoneIcon,
-    ChartBarIcon,
-    UserIcon,
-    PlayIcon,
-    PauseIcon,
-    StopIcon,
-    ExclamationTriangleIcon,
-    CalendarIcon
+  PhoneIcon,
+  PlayIcon,
+  PauseIcon,
+  StopIcon,
+  SpeakerWaveIcon,
+  ChartBarIcon,
+  UserIcon,
+  ClockIcon,
+  CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
+import { callsAPI } from "../services/calls";
+import { conversationAPI } from "../services/conversation";
+import toast from "react-hot-toast";
 
 const LiveMonitor = () => {
-    const liveCalls = [{
-            id: "call-1",
-            contact: "Alice Johnson",
-            campaign: "Q4 Sales Outreach",
-            status: "active",
-            duration: "0:45",
-            emotion: "neutral",
-            sentiment: "positive",
-            intent: "product_inquiry",
-            transcriptSnippet: "Agent: ...and how can I help you today? Alice: I'm interested in your new software features."
+  const [liveCalls, setLiveCalls] = useState([]);
+  const [selectedCall, setSelectedCall] = useState(null);
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+
+  useEffect(() => {
+    loadLiveCalls();
+    if (isMonitoring) {
+      const interval = setInterval(loadLiveCalls, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isMonitoring]);
+
+  const loadLiveCalls = async () => {
+    try {
+      const response = await callsAPI.getCalls({ status: "in_progress" });
+      setLiveCalls(response.calls || []);
+    } catch (error) {
+      console.error("Error loading live calls:", error);
+      toast.error("Failed to load live calls");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadConversationHistory = async (callId) => {
+    try {
+      const response = await conversationAPI.getConversationHistory(callId);
+      setConversationHistory(response.history || []);
+    } catch (error) {
+      console.error("Error loading conversation history:", error);
+      toast.error("Failed to load conversation history");
+    }
+  };
+
+  const handleCallAction = async (callId, action) => {
+    try {
+      await callsAPI.updateCallStatus(callId, { status: action });
+      toast.success(`Call ${action} successfully`);
+      loadLiveCalls();
+    } catch (error) {
+      console.error("Error updating call:", error);
+      toast.error("Failed to update call");
+    }
+  };
+
+  const handleSendMessage = async (message) => {
+    if (!selectedCall) return;
+
+    try {
+      const response = await conversationAPI.processConversation({
+        call_id: selectedCall.id,
+        user_input: message,
+        context: {
+          conversation_history: conversationHistory,
+          call_duration: selectedCall.duration,
+          emotion: selectedCall.emotion,
         },
-        {
-            id: "call-2",
-            contact: "Bob Smith",
-            campaign: "Developer Screening",
-            status: "active",
-            duration: "1:23",
-            emotion: "interested",
-            sentiment: "positive",
-            intent: "scheduling",
-            transcriptSnippet: "Agent: What's your experience with React? Bob: I've been using it for 3 years..."
-        }
-    ];
+      });
 
-    return ( <
-        div className = "space-y-6" >
-        <
-        div className = "flex items-center justify-between" >
-        <
-        div >
-        <
-        h1 className = "text-2xl font-bold text-gray-900" > Live Call Monitor < /h1> <
-        p className = "text-gray-600" > Monitor active calls in real - time and gain instant insights < /p> < /
-        div > <
-        div className = "flex items-center space-x-2" >
-        <
-        div className = "flex items-center text-red-600" >
-        <
-        div className = "w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse" > < /div> <
-        span className = "text-sm font-medium" > Live < /span> < /
-        div > <
-        /div> < /
-        div >
+      setConversationHistory((prev) => [
+        ...prev,
+        { type: "user", message, timestamp: new Date().toISOString() },
+        { type: "ai", message: response.answer, timestamp: new Date().toISOString() },
+      ]);
 
-        { /* Action Buttons */ } <
-        div className = "flex items-center space-x-4" >
-        <
-        button className = "flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700" >
-        <
-        svg className = "h-4 w-4 mr-2"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM15.657 6.343a1 1 0 011.414 0A9.972 9.972 0 0119 12a9.972 9.972 0 01-1.929 5.657 1 1 0 11-1.414-1.414A7.971 7.971 0 0017 12a7.971 7.971 0 00-1.343-4.243 1 1 0 010-1.414z"
-        clipRule = "evenodd" / >
-        <
-        /svg>
-        Whisper Mode <
-        /button> <
-        button className = "flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700" >
-        <
-        PhoneIcon className = "h-4 w-4 mr-2" / >
-        Join Call <
-        /button> <
-        button className = "flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700" >
-        <
-        StopIcon className = "h-4 w-4 mr-2" / >
-        End <
-        /button> < /
-        div >
+      if (response.should_fallback) {
+        toast.warning("AI suggests human handover");
+      }
+    } catch (error) {
+      console.error("Error processing conversation:", error);
+      toast.error("Failed to process conversation");
+    }
+  };
 
-        { /* Live Transcript */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4" > Live Transcript < /h3> <
-        div className = "space-y-4 max-h-96 overflow-y-auto" >
-        <
-        div className = "flex justify-start" >
-        <
-        div className = "bg-gray-100 rounded-lg p-3 max-w-xs" >
-        <
-        div className = "flex items-center justify-between mb-1" >
-        <
-        span className = "text-xs text-gray-500" > AI < /span> <
-        span className = "text-xs text-gray-500" > 14: 30: 05 < /span> < /
-        div > <
-        p className = "text-sm text-gray-900" > Hi Rahul, this is an automated call from TechCorp about our cloud solutions.Do you consent to
-        continue ? < /p> <
-        div className = "mt-1" >
-        <
-        span className = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800" >
-        professional <
-        /span> < /
-        div > <
-        /div> < /
-        div >
+  const getEmotionColor = (emotion) => {
+    switch (emotion) {
+      case "positive":
+        return "bg-green-100 text-green-800";
+      case "neutral":
+        return "bg-gray-100 text-gray-800";
+      case "negative":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
 
-        <
-        div className = "flex justify-end" >
-        <
-        div className = "bg-green-100 rounded-lg p-3 max-w-xs" >
-        <
-        div className = "flex items-center justify-between mb-1" >
-        <
-        span className = "text-xs text-gray-500" > Contact < /span> <
-        span className = "text-xs text-gray-500" > 14 : 30: 12 < /span> < /
-        div > <
-        p className = "text-sm text-gray-900" > Yes, go ahead. < /p> <
-        div className = "mt-1" >
-        <
-        span className = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800" >
-        neutral <
-        /span> < /
-        div > <
-        /div> < /
-        div >
+  const formatDuration = (seconds) => {
+    if (!seconds) return "0:00";
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  };
 
-        <
-        div className = "flex justify-start" >
-        <
-        div className = "bg-gray-100 rounded-lg p-3 max-w-xs" >
-        <
-        div className = "flex items-center justify-between mb-1" >
-        <
-        span className = "text-xs text-gray-500" > AI < /span> <
-        span className = "text-xs text-gray-500" > 14: 30: 14 < /span> < /
-        div > <
-        p className = "text-sm text-gray-900" > Great!Are you the right person to discuss cloud infrastructure
-        for your company ? < /p> <
-        div className = "mt-1" >
-        <
-        span className = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" >
-        warm <
-        /span> < /
-        div > <
-        /div> < /
-        div >
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Live Monitor</h1>
+          <p className="text-gray-600">Monitor active calls in real-time</p>
+        </div>
 
-        <
-        div className = "flex justify-end" >
-        <
-        div className = "bg-green-100 rounded-lg p-3 max-w-xs" >
-        <
-        div className = "flex items-center justify-between mb-1" >
-        <
-        span className = "text-xs text-gray-500" > Contact < /span> <
-        span className = "text-xs text-gray-500" > 14 : 30: 20 < /span> < /
-        div > <
-        p className = "text-sm text-gray-900" > Yes, I handle our IT infrastructure.We 're currently using Competitor X.</p> <
-        div className = "mt-1" >
-        <
-        span className = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" >
-        interested <
-        /span> < /
-        div > <
-        /div> < /
-        div > <
-        /div> < /
-        div >
-
-        { /* Pop-up Objection Handler */ } <
-        div className = "bg-orange-50 border border-orange-200 rounded-lg p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4 flex items-center" >
-        <
-        svg className = "h-5 w-5 text-orange-600 mr-2"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
-        clipRule = "evenodd" / >
-        <
-        /svg>
-        Pop - up Objection Handler <
-        /h3>
-
-        <
-        div className = "bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-4" >
-        <
-        div className = "flex items-center" >
-        <
-        ExclamationTriangleIcon className = "h-5 w-5 text-yellow-600 mr-2" / >
-        <
-        span className = "font-medium text-yellow-800" > Competitor X mentioned < /span> < /
-        div > <
-        /div>
-
-        <
-        div className = "mb-4" >
-        <
-        p className = "text-sm font-medium text-gray-900 mb-2" > Suggested Response: < /p> <
-        p className = "text-sm text-gray-700 mb-2" >
-        "Our solution offers 40% better performance with 30% lower costs. Would you like to see a side-by-side comparison?" <
-        /p> <
-        div className = "flex items-center justify-between" >
-        <
-        span className = "text-sm text-gray-600" > Confidence: 92 % < /span> < /
-        div > <
-        /div>
-
-        <
-        div className = "flex space-x-3" >
-        <
-        button className = "px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700" >
-        Use This Response <
-        /button> <
-        button className = "px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg" >
-        Modify <
-        /button> < /
-        div > <
-        /div>
-
-        { /* AI Analysis Cards */ } <
-        div className = "grid grid-cols-1 lg:grid-cols-2 gap-6" > { /* AI Agent Notes */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4 flex items-center" >
-        <
-        svg className = "h-5 w-5 mr-2"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-        clipRule = "evenodd" / >
-        <
-        /svg>
-        AI Agent Notes(Live) <
-        /h3> <
-        div className = "bg-blue-50 rounded-lg p-4" >
-        <
-        div className = "flex items-center justify-between mb-2" >
-        <
-        span className = "text-sm text-gray-600" > 14: 30: 22 < /span> <
-        svg className = "h-4 w-4 text-blue-600"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path d = "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" / >
-        <
-        /svg> < /
-        div > <
-        p className = "text-sm text-gray-900" > AI detected high intent - competitor comparison opportunity < /p> < /
-        div > <
-        /div>
-
-        { /* Call Information */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4" > Call Information < /h3> <
-        div className = "space-y-3" >
-        <
-        div className = "flex justify-between" >
-        <
-        span className = "text-sm text-gray-600" > Contact: < /span> <
-        span className = "text-sm font-medium text-gray-900" > Rahul Sharma < /span> < /
-        div > <
-        div className = "flex justify-between" >
-        <
-        span className = "text-sm text-gray-600" > Campaign: < /span> <
-        span className = "text-sm font-medium text-gray-900" > Q4 Sales Outreach < /span> < /
-        div > <
-        div className = "flex justify-between" >
-        <
-        span className = "text-sm text-gray-600" > Duration: < /span> <
-        span className = "text-sm font-medium text-gray-900" > 2 m 42 s < /span> < /
-        div > <
-        /div> < /
-        div >
-
-        { /* Real-time Emotion Detection */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4" > Real - time Emotion Detection < /h3> <
-        div className = "text-center" >
-        <
-        div className = "relative w-32 h-32 mx-auto mb-4" >
-        <
-        svg className = "w-32 h-32 transform -rotate-90"
-        viewBox = "0 0 100 100" >
-        <
-        circle cx = "50"
-        cy = "50"
-        r = "45"
-        stroke = "#e5e7eb"
-        strokeWidth = "8"
-        fill = "none" /
+        <button
+          onClick={() => setIsMonitoring(!isMonitoring)}
+          className={`flex items-center px-4 py-2 rounded-lg ${
+            isMonitoring
+              ? "bg-red-600 text-white hover:bg-red-700"
+              : "bg-green-600 text-white hover:bg-green-700"
+          }`}
         >
-        <
-        circle cx = "50"
-        cy = "50"
-        r = "45"
-        stroke = "#10b981"
-        strokeWidth = "8"
-        fill = "none"
-        strokeDasharray = { `${2 * Math.PI * 45 * 0.82} ${2 * Math.PI * 45}` }
-        strokeLinecap = "round" /
+          {isMonitoring ? (
+            <>
+              <PauseIcon className="h-4 w-4 mr-2" />
+              Stop Monitoring
+            </>
+          ) : (
+            <>
+              <PlayIcon className="h-4 w-4 mr-2" />
+              Start Monitoring
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Metrics Section */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Active Calls */}
+        <MetricCard
+          icon={<PhoneIcon className="h-8 w-8 text-blue-600" />}
+          title="Active Calls"
+          value={liveCalls.length}
+        />
+
+        {/* Average Duration */}
+        <MetricCard
+          icon={<ClockIcon className="h-8 w-8 text-green-600" />}
+          title="Avg Duration"
+          value={
+            liveCalls.length > 0
+              ? formatDuration(
+                  liveCalls.reduce((acc, c) => acc + (c.duration || 0), 0) / liveCalls.length
+                )
+              : "0:00"
+          }
+        />
+
+        {/* Total Cost */}
+        <MetricCard
+          icon={<CurrencyDollarIcon className="h-8 w-8 text-purple-600" />}
+          title="Total Cost"
+          value={`$${liveCalls
+            .reduce((acc, c) => acc + parseFloat(c.cost || 0), 0)
+            .toFixed(4)}`}
+        />
+
+        {/* Success Rate */}
+        <MetricCard
+          icon={<ChartBarIcon className="h-8 w-8 text-orange-600" />}
+          title="Success Rate"
+          value={`${
+            liveCalls.length > 0
+              ? Math.round(
+                  (liveCalls.filter((c) => c.emotion === "positive").length / liveCalls.length) *
+                    100
+                )
+              : 0
+          }%`}
+        />
+      </div>
+
+      {/* Main Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Active Calls */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Active Calls</h3>
+
+          {loading ? (
+            <LoadingState />
+          ) : liveCalls.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="space-y-4">
+              {liveCalls.map((call) => (
+                <div
+                  key={call.id}
+                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                    selectedCall?.id === call.id
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                  onClick={() => {
+                    setSelectedCall(call);
+                    loadConversationHistory(call.id);
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                        <PhoneIcon className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-sm font-medium text-gray-900">
+                          {call.contact_name || "Unknown Contact"}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {call.phone_number || "No phone number"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {call.emotion && (
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEmotionColor(
+                            call.emotion
+                          )}`}
+                        >
+                          {call.emotion.toUpperCase()}
+                        </span>
+                      )}
+                      <span className="text-sm text-gray-500">
+                        {formatDuration(call.duration)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCallAction(call.id, "completed");
+                        }}
+                        className="flex items-center px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                      >
+                        <StopIcon className="h-4 w-4 mr-1" /> Complete
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCallAction(call.id, "cancelled");
+                        }}
+                        className="flex items-center px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                      >
+                        <PauseIcon className="h-4 w-4 mr-1" /> Cancel
+                      </button>
+                    </div>
+                    <span className="text-sm text-gray-500">
+                      ${parseFloat(call.cost || 0).toFixed(4)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Call Details */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Call Details</h3>
+          {selectedCall ? (
+            <CallDetails
+              call={selectedCall}
+              conversationHistory={conversationHistory}
+              getEmotionColor={getEmotionColor}
+              formatDuration={formatDuration}
+              handleSendMessage={handleSendMessage}
+            />
+          ) : (
+            <EmptyState message="Select a call to view details" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* --- Reusable Components --- */
+
+const MetricCard = ({ icon, title, value }) => (
+  <div className="bg-white rounded-lg shadow-sm p-6">
+    <div className="flex items-center">
+      <div className="flex-shrink-0">{icon}</div>
+      <div className="ml-4">
+        <p className="text-sm font-medium text-gray-500">{title}</p>
+        <p className="text-2xl font-semibold text-gray-900">{value}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const LoadingState = () => (
+  <div className="text-center py-8">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
+    <p className="mt-2 text-gray-600">Loading calls...</p>
+  </div>
+);
+
+const EmptyState = ({ message = "No active calls" }) => (
+  <div className="text-center py-8">
+    <PhoneIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+    <p className="text-gray-600">{message}</p>
+  </div>
+);
+
+const CallDetails = ({
+  call,
+  conversationHistory,
+  getEmotionColor,
+  formatDuration,
+  handleSendMessage,
+}) => (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-gray-900">{call.contact_name || "Unknown Contact"}</p>
+        <p className="text-sm text-gray-500">{call.phone_number}</p>
+      </div>
+      <div className="text-right">
+        <p className="text-sm text-gray-500">Duration</p>
+        <p className="text-lg font-semibold text-gray-900">{formatDuration(call.duration)}</p>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-2 gap-4">
+      <div>
+        <p className="text-sm text-gray-500">Status</p>
+        <p className="text-sm font-medium text-gray-900">
+          {call.status ? call.status.replace("_", " ").toUpperCase() : "N/A"}
+        </p>
+      </div>
+      <div>
+        <p className="text-sm text-gray-500">Cost</p>
+        <p className="text-sm font-medium text-gray-900">
+          ${parseFloat(call.cost || 0).toFixed(4)}
+        </p>
+      </div>
+    </div>
+
+    {call.emotion && (
+      <div>
+        <p className="text-sm text-gray-500">Emotion</p>
+        <span
+          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEmotionColor(
+            call.emotion
+          )}`}
         >
-        <
-        /svg> <
-        div className = "absolute inset-0 flex items-center justify-center" >
-        <
-        div className = "text-center" >
-        <
-        div className = "text-2xl font-bold text-gray-900" > 82 % < /div> <
-        div className = "text-sm text-gray-600" > Interested < /div> < /
-        div > <
-        /div> < /
-        div > <
-        div className = "w-full bg-gray-200 rounded-full h-2 mb-2" >
-        <
-        div className = "bg-green-500 h-2 rounded-full"
-        style = {
-            { width: '82%' }
-        } > < /div> < /
-        div > <
-        p className = "text-sm text-gray-600" > AI adjusting tone to match interest < /p> < /
-        div > <
-        /div>
+          {call.emotion.toUpperCase()}
+        </span>
+      </div>
+    )}
 
-        { /* Intent Detection */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4" > Intent Detection < /h3> <
-        div >
-        <
-        p className = "text-sm font-medium text-gray-900 mb-2" > Purchase Intent < /p> <
-        div className = "flex items-center justify-between mb-2" >
-        <
-        div className = "flex-1 bg-gray-200 rounded-full h-2 mr-4" >
-        <
-        div className = "bg-blue-600 h-2 rounded-full"
-        style = {
-            { width: '82%' }
-        } > < /div> < /
-        div > <
-        span className = "text-sm font-medium text-gray-900" > 82 % < /span> < /
-        div > <
-        div className = "bg-yellow-50 border border-yellow-200 rounded-lg p-3" >
-        <
-        div className = "flex items-center" >
-        <
-        svg className = "h-4 w-4 text-yellow-600 mr-2"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
-        clipRule = "evenodd" / >
-        <
-        /svg> <
-        span className = "text-sm text-yellow-800 font-medium" > High intent detected - Ready
-        for handoff < /span> < /
-        div > <
-        /div> < /
-        div > <
-        /div> < /
-        div >
+    {/* Conversation */}
+    <div>
+      <p className="text-sm text-gray-500 mb-2">Conversation</p>
+      <div className="max-h-64 overflow-y-auto space-y-2">
+        {conversationHistory.map((m, i) => (
+          <div
+            key={i}
+            className={`p-2 rounded-lg text-sm ${
+              m.type === "user"
+                ? "bg-blue-100 text-blue-900 ml-4"
+                : "bg-gray-100 text-gray-900 mr-4"
+            }`}
+          >
+            <p>{m.message}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {new Date(m.timestamp).toLocaleTimeString()}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
 
-        { /* Competitive Intel and Quick Actions */ } <
-        div className = "grid grid-cols-1 lg:grid-cols-2 gap-6" > { /* Competitive Intel */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6 border border-pink-200" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4 flex items-center" >
-        <
-        svg className = "h-5 w-5 mr-2 text-pink-600"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-        clipRule = "evenodd" / >
-        <
-        /svg>
-        Competitive Intel <
-        /h3>
+    {/* Quick Actions */}
+    <div className="pt-4 border-t">
+      <p className="text-sm text-gray-500 mb-2">Quick Actions</p>
+      <div className="flex space-x-2">
+        <ActionButton
+          color="gray"
+          text="Repeat"
+          onClick={() => handleSendMessage("Can you repeat that?")}
+        />
+        <ActionButton
+          color="orange"
+          text="Handover"
+          onClick={() => handleSendMessage("Let me transfer you to a human representative")}
+        />
+        <ActionButton
+          color="green"
+          text="Close"
+          onClick={() => handleSendMessage("Thank you for your time")}
+        />
+      </div>
+    </div>
+  </div>
+);
 
-        <
-        div className = "bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-4" >
-        <
-        div className = "flex items-center" >
-        <
-        ExclamationTriangleIcon className = "h-5 w-5 text-yellow-600 mr-2" / >
-        <
-        span className = "font-medium text-yellow-800" > Competitor Mentioned: Competitor X < /span> < /
-        div > <
-        /div>
-
-        <
-        div className = "space-y-2 mb-4" >
-        <
-        p className = "text-sm text-gray-700" > •Their pricing: $199 / month < /p> <
-        p className = "text-sm text-gray-700" > •Our advantage: 40 % faster performance < /p> <
-        p className = "text-sm text-gray-700" > •Common pain point: Poor support < /p> < /
-        div >
-
-        <
-        button className = "w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700" >
-        View Full Battle Card <
-        /button> < /
-        div >
-
-        { /* Quick Actions */ } <
-        div className = "bg-white rounded-lg shadow-sm p-6" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900 mb-4" > Quick Actions < /h3> <
-        div className = "space-y-3" >
-        <
-        button className = "w-full flex items-center p-3 border border-gray-300 rounded-lg hover:bg-gray-50" >
-        <
-        CalendarIcon className = "h-5 w-5 text-gray-600 mr-3" / >
-        <
-        span className = "text-sm text-gray-700" > Schedule Meeting < /span> < /
-        button > <
-        button className = "w-full flex items-center p-3 border border-gray-300 rounded-lg hover:bg-gray-50" >
-        <
-        svg className = "h-5 w-5 text-gray-600 mr-3"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-        clipRule = "evenodd" / >
-        <
-        /svg> <
-        span className = "text-sm text-gray-700" > Add Note < /span> < /
-        button > <
-        button className = "w-full flex items-center p-3 border border-gray-300 rounded-lg hover:bg-gray-50" >
-        <
-        svg className = "h-5 w-5 text-gray-600 mr-3"
-        fill = "currentColor"
-        viewBox = "0 0 20 20" >
-        <
-        path fillRule = "evenodd"
-        d = "M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-        clipRule = "evenodd" / >
-        <
-        /svg> <
-        span className = "text-sm text-gray-700" > Flag
-        for Review < /span> < /
-        button > <
-        /div> < /
-        div > <
-        /div> < /
-        div >
-    );
+const ActionButton = ({ color, text, onClick }) => {
+  const colors = {
+    gray: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+    orange: "bg-orange-100 text-orange-700 hover:bg-orange-200",
+    green: "bg-green-100 text-green-700 hover:bg-green-200",
+  };
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1 text-xs rounded transition-colors ${colors[color]}`}
+    >
+      {text}
+    </button>
+  );
 };
 
 export default LiveMonitor;

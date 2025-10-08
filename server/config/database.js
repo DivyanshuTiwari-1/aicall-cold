@@ -1,9 +1,14 @@
 const { Pool } = require('pg');
 const logger = require('../utils/logger');
 
+// Detect if running in Docker or locally
+const isDocker = process.env.NODE_ENV === 'production' || process.env.DOCKER_ENV === 'true';
+const defaultHost = isDocker ? 'postgres' : 'localhost';
+const defaultPort = isDocker ? 5432 : 5433; // Docker uses 5433, local uses 5432
+
 const pool = new Pool({
-    host: process.env.DB_HOST || 'postgres',
-    port: parseInt(process.env.DB_PORT) || 5432,
+    host: process.env.DB_HOST || defaultHost,
+    port: parseInt(process.env.DB_PORT) || defaultPort,
     database: process.env.DB_NAME || 'ai_dialer',
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',

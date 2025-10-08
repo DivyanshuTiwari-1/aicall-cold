@@ -1,29 +1,29 @@
 import {
-    ArrowTrendingDownIcon,
-    ArrowTrendingUpIcon,
-    CurrencyDollarIcon,
-    PhoneIcon,
-    UsersIcon
+  ArrowTrendingDownIcon,
+  ArrowTrendingUpIcon,
+  CurrencyDollarIcon,
+  PhoneIcon,
+  UsersIcon,
 } from "@heroicons/react/24/outline";
 import React, { useState } from "react";
 import { useQuery } from "react-query";
 import {
-    Bar,
-    BarChart,
-    CartesianGrid,
-    Cell,
-    Legend,
-    Line,
-    LineChart,
-    Pie,
-    PieChart,
-    ResponsiveContainer,
-    Tooltip,
-    XAxis,
-    YAxis,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
 import LoadingSpinner from "../components/LoadingSpinner";
-import api from "../utils/api";
+import api from "../services/api";
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState("7d");
@@ -34,8 +34,11 @@ const Analytics = () => {
     error,
   } = useQuery(
     ["analytics", dateRange],
-    () => api.get(`/analytics/dashboard?range=${dateRange}`).then((res) => res.data),
-    { refetchInterval: 30000 } // Refetch every 30 seconds
+    () =>
+      api
+        .get(`/analytics/dashboard?range=${dateRange}`)
+        .then((res) => res.data),
+    { refetchInterval: 30000 }
   );
 
   if (isLoading) return <LoadingSpinner />;
@@ -188,7 +191,7 @@ const Analytics = () => {
         </div>
       </div>
 
-      {/* Call Outcomes & Scripts */}
+      {/* Call Outcomes & Top Scripts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Call Outcomes */}
         <div className="card">
@@ -228,16 +231,10 @@ const Analytics = () => {
               >
                 <div>
                   <p className="font-medium text-gray-900">{script.name}</p>
-                  <p className="text-sm text-gray-600">
-                    Conversion Rate: {script.rate}%
-                  </p>
+                  <p className="text-sm text-gray-600">Conversion Rate: {script.rate}%</p>
                 </div>
                 <div className="text-right">
-                  <p
-                    className={`text-sm font-medium text-${script.color}-600`}
-                  >
-                    {script.change}
-                  </p>
+                  <p className={`text-sm font-medium text-${script.color}-600`}>{script.change}</p>
                   <p className="text-xs text-gray-500">vs last week</p>
                 </div>
               </div>

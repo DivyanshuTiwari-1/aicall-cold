@@ -370,4 +370,112 @@ router.delete('/:id', async(req, res) => {
     }
 });
 
+// Start campaign
+router.post('/:id/start', async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Update campaign status to active
+        const result = await query(`
+            UPDATE campaigns
+            SET status = 'active', updated_at = NOW()
+            WHERE id = $1 AND organization_id = $2
+            RETURNING *
+        `, [id, req.organizationId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        logger.info(`Campaign ${id} started by organization ${req.organizationId}`);
+        res.json({
+            success: true,
+            message: 'Campaign started successfully',
+            campaign: result.rows[0]
+        });
+
+    } catch (error) {
+        logger.error('Campaign start error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to start campaign'
+        });
+    }
+});
+
+// Pause campaign
+router.post('/:id/pause', async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Update campaign status to paused
+        const result = await query(`
+            UPDATE campaigns
+            SET status = 'paused', updated_at = NOW()
+            WHERE id = $1 AND organization_id = $2
+            RETURNING *
+        `, [id, req.organizationId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        logger.info(`Campaign ${id} paused by organization ${req.organizationId}`);
+        res.json({
+            success: true,
+            message: 'Campaign paused successfully',
+            campaign: result.rows[0]
+        });
+
+    } catch (error) {
+        logger.error('Campaign pause error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to pause campaign'
+        });
+    }
+});
+
+// Stop campaign
+router.post('/:id/stop', async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Update campaign status to completed
+        const result = await query(`
+            UPDATE campaigns
+            SET status = 'completed', updated_at = NOW()
+            WHERE id = $1 AND organization_id = $2
+            RETURNING *
+        `, [id, req.organizationId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        logger.info(`Campaign ${id} stopped by organization ${req.organizationId}`);
+        res.json({
+            success: true,
+            message: 'Campaign stopped successfully',
+            campaign: result.rows[0]
+        });
+
+    } catch (error) {
+        logger.error('Campaign stop error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to stop campaign'
+        });
+    }
+});
+
 module.exports = router;
