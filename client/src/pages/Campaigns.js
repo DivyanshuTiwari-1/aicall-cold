@@ -3,12 +3,7 @@ import {
     PlusIcon,
     PlayIcon,
     PauseIcon,
-    ArrowPathIcon,
-    ClockIcon,
-    MegaphoneIcon,
-    UserGroupIcon,
-    CalendarIcon,
-    CurrencyDollarIcon
+    ClockIcon
 } from "@heroicons/react/24/outline";
 
 const Campaigns = () => {

@@ -6,7 +6,6 @@ import LoadingSpinner from "../components/LoadingSpinner";
 
 const Calls = () => {
     const {
-        data: calls,
         isLoading,
         error,
     } = useQuery("calls", () => api.get("/calls").then(res => res.data));

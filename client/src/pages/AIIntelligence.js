@@ -1,40 +1,11 @@
 import React from "react";
 import {
-    CpuChipIcon,
-    ChartBarIcon,
     LightBulbIcon,
-    CheckCircleIcon,
     ArrowRightIcon,
     ClockIcon
 } from "@heroicons/react/24/outline";
 
 const AIIntelligence = () => {
-    const optimizations = [{
-        id: 1,
-        name: "recruitment_v2",
-        confidence: 91,
-        recommendation: "Reduce technical jargon in first 30 seconds. Use simpler language.",
-        current: 22.1,
-        predicted: 28.7,
-        improvement: 6.6
-    }];
-
-    const patterns = [{
-            pattern: "No-answer → Retry in 2h",
-            success: "+34% success",
-            color: "text-green-600"
-        },
-        {
-            pattern: "Voicemail → Retry in 24h",
-            success: "+28% success",
-            color: "text-green-600"
-        },
-        {
-            pattern: "Busy → Retry in 30min",
-            success: "+42% success",
-            color: "text-green-600"
-        }
-    ];
 
     return ( <
         div className = "space-y-6" >

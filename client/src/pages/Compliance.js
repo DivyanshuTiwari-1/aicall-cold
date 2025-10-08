@@ -3,8 +3,7 @@ import {
     ShieldCheckIcon,
     ArrowUpIcon,
     CheckCircleIcon,
-    XCircleIcon,
-    ExclamationTriangleIcon
+    XCircleIcon
 } from "@heroicons/react/24/outline";
 
 const Compliance = () => {

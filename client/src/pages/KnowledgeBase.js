@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-    BookOpenIcon,
     CloudArrowUpIcon,
     ExclamationTriangleIcon,
     Cog6ToothIcon

@@ -12,7 +12,6 @@ import LoadingSpinner from "../components/LoadingSpinner";
 
 const Dashboard = () => {
     const {
-        data: analytics,
         isLoading,
         error,
     } = useQuery(

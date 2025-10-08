@@ -1,39 +1,12 @@
 import React from "react";
 import {
     PhoneIcon,
-    ChartBarIcon,
-    UserIcon,
-    PlayIcon,
-    PauseIcon,
     StopIcon,
     ExclamationTriangleIcon,
     CalendarIcon
 } from "@heroicons/react/24/outline";
 
 const LiveMonitor = () => {
-    const liveCalls = [{
-            id: "call-1",
-            contact: "Alice Johnson",
-            campaign: "Q4 Sales Outreach",
-            status: "active",
-            duration: "0:45",
-            emotion: "neutral",
-            sentiment: "positive",
-            intent: "product_inquiry",
-            transcriptSnippet: "Agent: ...and how can I help you today? Alice: I'm interested in your new software features."
-        },
-        {
-            id: "call-2",
-            contact: "Bob Smith",
-            campaign: "Developer Screening",
-            status: "active",
-            duration: "1:23",
-            emotion: "interested",
-            sentiment: "positive",
-            intent: "scheduling",
-            transcriptSnippet: "Agent: What's your experience with React? Bob: I've been using it for 3 years..."
-        }
-    ];
 
     return ( <
         div className = "space-y-6" >
