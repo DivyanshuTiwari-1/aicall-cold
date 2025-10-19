@@ -2,6 +2,7 @@ const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -37,16 +38,16 @@ router.post('/query', async(req, res) => {
 
         const result = await query(`
       SELECT id, question, answer, category, confidence
-      FROM knowledge_base
+      FROM knowledge_entries
       WHERE organization_id = $1 AND is_active = true
       AND (
-        LOWER(question) LIKE ANY($2) OR 
+        LOWER(question) LIKE ANY($2) OR
         LOWER(answer) LIKE ANY($3)
       )
-      ORDER BY confidence DESC, 
-        CASE 
-          WHEN LOWER(question) LIKE ANY($2) THEN 1 
-          ELSE 2 
+      ORDER BY confidence DESC,
+        CASE
+          WHEN LOWER(question) LIKE ANY($2) THEN 1
+          ELSE 2
         END
       LIMIT 5
     `, [
@@ -54,6 +55,13 @@ router.post('/query', async(req, res) => {
             keywords.map(k => `%${k}%`),
             keywords.map(k => `%${k}%`)
         ]);
+
+        // Log the query
+        const callId = req.body.callId || null;
+        await query(`
+            INSERT INTO knowledge_queries (call_id, query_text, organization_id)
+            VALUES ($1, $2, $3)
+        `, [callId, question, req.organizationId]);
 
         if (result.rows.length === 0) {
             return res.json({
@@ -71,6 +79,23 @@ router.post('/query', async(req, res) => {
             answer: row.answer,
             category: row.category
         }));
+
+        // Update usage statistics for matched entries
+        for (const row of result.rows) {
+            await query(`
+                UPDATE knowledge_entries
+                SET usage_count = usage_count + 1, last_used_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+            `, [row.id]);
+        }
+
+        // Log the matched entry
+        await query(`
+            UPDATE knowledge_queries
+            SET matched_entry_id = $1, confidence_score = $2
+            WHERE call_id = $3 AND query_text = $4
+            ORDER BY created_at DESC LIMIT 1
+        `, [bestMatch.id, bestMatch.confidence, callId, question]);
 
         res.json({
             success: true,
@@ -253,7 +278,7 @@ router.put('/:id', async(req, res) => {
         params.push(id, req.organizationId);
 
         const result = await query(`
-      UPDATE knowledge_base 
+      UPDATE knowledge_base
       SET ${updates.join(', ')}
       WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
       RETURNING *
@@ -314,6 +339,83 @@ router.delete('/:id', async(req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to delete knowledge base entry'
+        });
+    }
+});
+
+// Get knowledge base categories
+router.get('/categories', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const categoriesQuery = `
+            SELECT DISTINCT category, COUNT(*) as entry_count
+            FROM knowledge_base
+            WHERE organization_id = $1
+            GROUP BY category
+            ORDER BY category
+        `;
+
+        const result = await query(categoriesQuery, [req.user.organizationId]);
+
+        res.json({
+            success: true,
+            categories: result.rows
+        });
+    } catch (error) {
+        logger.error('Error fetching knowledge categories:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch knowledge categories'
+        });
+    }
+});
+
+// Get knowledge base entries
+router.get('/entries', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const { search = '', category = '', limit = 50, offset = 0 } = req.query;
+
+        let whereClause = 'WHERE organization_id = $1';
+        let params = [req.user.organizationId];
+        let paramCount = 1;
+
+        if (search) {
+            paramCount++;
+            whereClause += ` AND (question ILIKE $${paramCount} OR answer ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
+        }
+
+        if (category) {
+            paramCount++;
+            whereClause += ` AND category = $${paramCount}`;
+            params.push(category);
+        }
+
+        const entriesQuery = `
+            SELECT id, question, answer, category, confidence, created_at, updated_at
+            FROM knowledge_base
+            ${whereClause}
+            ORDER BY created_at DESC
+            LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+        `;
+
+        params.push(parseInt(limit), parseInt(offset));
+
+        const result = await query(entriesQuery, params);
+
+        res.json({
+            success: true,
+            entries: result.rows,
+            pagination: {
+                limit: parseInt(limit),
+                offset: parseInt(offset),
+                total: result.rows.length
+            }
+        });
+    } catch (error) {
+        logger.error('Error fetching knowledge entries:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch knowledge entries'
         });
     }
 });

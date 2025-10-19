@@ -1,54 +1,103 @@
+import {
+    BookOpenIcon,
+    ChartBarIcon,
+    ChartPieIcon,
+    ClipboardDocumentListIcon,
+    CpuChipIcon,
+    DocumentArrowUpIcon,
+    MegaphoneIcon,
+    PhoneIcon,
+    ShieldCheckIcon,
+    SignalIcon,
+    SpeakerWaveIcon,
+    UserGroupIcon,
+    UserIcon,
+} from "@heroicons/react/24/outline";
 import React from "react";
 import { NavLink } from "react-router-dom";
-import {
-  ChartBarIcon,
-  ChartPieIcon,
-  MegaphoneIcon,
-  PhoneIcon,
-  SignalIcon,
-  SpeakerWaveIcon,
-  CpuChipIcon,
-  BookOpenIcon,
-  ShieldCheckIcon,
-} from "@heroicons/react/24/outline";
+import { useAuth } from "../contexts/AuthContext";
 
 const Navigation = () => {
-  const navigation = [
-    { name: "Dashboard", href: "/dashboard", icon: ChartBarIcon },
-    { name: "Executive View", href: "/executive", icon: ChartPieIcon },
-    { name: "Campaigns", href: "/campaigns", icon: MegaphoneIcon },
-    { name: "Call History", href: "/calls", icon: PhoneIcon },
-    { name: "Live Monitor", href: "/live-monitor", icon: SignalIcon },
-    { name: "Voice Studio", href: "/voice-studio", icon: SpeakerWaveIcon },
-    { name: "AI Intelligence", href: "/ai-intelligence", icon: CpuChipIcon },
-    { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpenIcon },
-    { name: "Compliance", href: "/compliance", icon: ShieldCheckIcon },
-  ];
+    const { user } = useAuth();
+    const roleType = user?.roleType || 'agent';
 
-  return (
-    <nav className="bg-white border-b border-gray-200">
-      <div className="px-6">
-        <div className="flex space-x-8">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              className={({ isActive }) =>
-                `group flex items-center px-3 py-4 text-sm font-medium border-b-2 transition-colors duration-200 ${
-                  isActive
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`
-              }
-            >
-              <item.icon className="mr-2 h-5 w-5 flex-shrink-0" aria-hidden="true" />
-              {item.name}
-            </NavLink>
-          ))}
-        </div>
-      </div>
-    </nav>
-  );
+    // Role-based navigation items
+    const getNavigationItems = () => {
+        const baseItems = [
+            { name: "Dashboard", href: "/dashboard", icon: ChartBarIcon, roles: ['admin', 'manager', 'agent'] },
+            { name: "Campaigns", href: "/campaigns", icon: MegaphoneIcon, roles: ['admin', 'manager', 'agent'] },
+            { name: "Contacts", href: "/contacts", icon: UserGroupIcon, roles: ['admin', 'manager', 'agent', 'data_uploader'] },
+        ];
+
+        // Agent-specific items
+        if (['agent'].includes(roleType)) {
+            baseItems.push(
+                { name: "My Dashboard", href: "/agent-dashboard", icon: UserIcon, roles: ['agent'] },
+                { name: "My Leads", href: "/agent", icon: ClipboardDocumentListIcon, roles: ['agent'] },
+                { name: "Call History", href: "/my-calls", icon: PhoneIcon, roles: ['agent'] }
+            );
+        }
+
+        // Manager-specific items
+        if (['manager', 'admin'].includes(roleType)) {
+            baseItems.push(
+                { name: "Team Performance", href: "/team-performance", icon: ChartPieIcon, roles: ['manager', 'admin'] },
+                { name: "Live Monitor", href: "/live-monitor", icon: SignalIcon, roles: ['manager', 'admin'] }
+            );
+        }
+
+        // Admin-specific items
+        if (['admin'].includes(roleType)) {
+            baseItems.push(
+                { name: "User Management", href: "/users", icon: UserGroupIcon, roles: ['admin'] },
+                { name: "Lead Assignment", href: "/lead-assignment", icon: DocumentArrowUpIcon, roles: ['admin'] },
+                { name: "Executive View", href: "/executive", icon: ChartPieIcon, roles: ['admin'] }
+            );
+        }
+
+        // Data uploader specific items
+        if (['data_uploader', 'admin'].includes(roleType)) {
+            baseItems.push({ name: "Upload Contacts", href: "/upload-contacts", icon: DocumentArrowUpIcon, roles: ['data_uploader', 'admin'] });
+        }
+
+        // Common items for all roles
+        baseItems.push(
+            { name: "Voice Studio", href: "/voice-studio", icon: SpeakerWaveIcon, roles: ['admin', 'manager', 'agent'] },
+            { name: "AI Intelligence", href: "/ai-intelligence", icon: CpuChipIcon, roles: ['admin', 'manager', 'agent'] },
+            { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpenIcon, roles: ['admin', 'manager', 'agent'] },
+            { name: "Compliance", href: "/compliance", icon: ShieldCheckIcon, roles: ['admin', 'manager', 'agent'] }
+        );
+
+        // Filter items based on user role
+        return baseItems.filter(item => item.roles.includes(roleType));
+    };
+
+    const navigation = getNavigationItems();
+
+    return (
+        <nav className="bg-white border-b border-gray-200">
+            <div className="px-6">
+                <div className="flex space-x-8">
+                    {navigation.map((item) => (
+                        <NavLink
+                            key={item.name}
+                            to={item.href}
+                            className={({ isActive }) =>
+                                `group flex items-center px-3 py-4 text-sm font-medium border-b-2 transition-colors duration-200 ${
+                                    isActive
+                                        ? "border-blue-600 text-blue-600"
+                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                }`
+                            }
+                        >
+                            <item.icon className="mr-2 h-5 w-5 flex-shrink-0" aria-hidden="true" />
+                            {item.name}
+                        </NavLink>
+                    ))}
+                </div>
+            </div>
+        </nav>
+    );
 };
 
 export default Navigation;

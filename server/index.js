@@ -19,6 +19,13 @@ const mlRoutes = require('./routes/ml');
 const scriptRoutes = require('./routes/scripts');
 const conversationRoutes = require('./routes/conversation');
 const asteriskRoutes = require('./routes/asterisk');
+const userRoutes = require('./routes/users');
+const assignmentRoutes = require('./routes/assignments');
+const manualCallRoutes = require('./routes/manualcalls');
+const aiIntelligenceRoutes = require('./routes/ai-intelligence');
+const billingRoutes = require('./routes/billing');
+const warmTransferRoutes = require('./routes/warm-transfers');
+const webhookRoutes = require('./routes/webhooks');
 // Initialize telephony provider early
 require('./services/telephony');
 
@@ -47,11 +54,17 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// Rate limiting
+// Rate limiting - configurable via environment variables
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    message: 'Too many requests from this IP, please try again later.'
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes default
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // 100 requests default
+    message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    // Skip rate limiting for health checks and certain endpoints
+    skip: (req) => {
+        return req.path === '/health' || req.path === '/api/health';
+    }
 });
 app.use('/api/', limiter);
 
@@ -69,6 +82,13 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/users', authenticateToken, userRoutes);
+app.use('/api/v1/assignments', authenticateToken, assignmentRoutes);
+app.use('/api/v1/manualcalls', authenticateToken, manualCallRoutes);
+app.use('/api/v1/ai-intelligence', authenticateToken, aiIntelligenceRoutes);
+app.use('/api/v1/billing', authenticateToken, billingRoutes);
+app.use('/api/v1/warm-transfers', authenticateToken, warmTransferRoutes);
+app.use('/api/v1/webhooks', authenticateToken, webhookRoutes);
 app.use('/api/v1/campaigns', authenticateToken, campaignRoutes);
 app.use('/api/v1/contacts', authenticateToken, contactRoutes);
 app.use('/api/v1/calls', authenticateToken, callRoutes);
@@ -90,9 +110,35 @@ wss.on('connection', (ws, req) => {
         try {
             const data = JSON.parse(message);
 
-            if (data.type === 'subscribe_call') {
-                ws.callId = data.call_id;
-                logger.info(`Client subscribed to call: ${data.call_id}`);
+            switch (data.type) {
+                case 'subscribe_call':
+                    ws.callId = data.call_id;
+                    logger.info(`Client subscribed to call: ${data.call_id}`);
+                    break;
+
+                case 'subscribe_user':
+                    ws.userId = data.user_id;
+                    ws.organizationId = data.organization_id;
+                    logger.info(`Client subscribed to user: ${data.user_id}`);
+                    break;
+
+                case 'subscribe_agent':
+                    ws.agentId = data.agent_id;
+                    ws.organizationId = data.organization_id;
+                    logger.info(`Client subscribed to agent: ${data.agent_id}`);
+                    break;
+
+                case 'subscribe_organization':
+                    ws.organizationId = data.organization_id;
+                    logger.info(`Client subscribed to organization: ${data.organization_id}`);
+                    break;
+
+                case 'ping':
+                    ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+                    break;
+
+                default:
+                    logger.warn(`Unknown WebSocket message type: ${data.type}`);
             }
         } catch (error) {
             logger.error('WebSocket message parsing error:', error);
@@ -104,12 +150,98 @@ wss.on('connection', (ws, req) => {
     });
 });
 
-// Global WebSocket broadcast function
+// Global WebSocket broadcast functions
 global.broadcastToCall = (callId, data) => {
     wss.clients.forEach((client) => {
         if (client.readyState === 1 && client.callId === callId) {
             client.send(JSON.stringify(data));
         }
+    });
+};
+
+global.broadcastToUser = (userId, data) => {
+    wss.clients.forEach((client) => {
+        if (client.readyState === 1 && client.userId === userId) {
+            client.send(JSON.stringify(data));
+        }
+    });
+};
+
+global.broadcastToAgent = (agentId, data) => {
+    wss.clients.forEach((client) => {
+        if (client.readyState === 1 && client.agentId === agentId) {
+            client.send(JSON.stringify(data));
+        }
+    });
+};
+
+global.broadcastToOrganization = (organizationId, data) => {
+    wss.clients.forEach((client) => {
+        if (client.readyState === 1 && client.organizationId === organizationId) {
+            client.send(JSON.stringify(data));
+        }
+    });
+};
+
+// Phase 1 specific broadcast functions
+global.broadcastCallStatusUpdate = (callId, status, metadata = {}) => {
+    global.broadcastToCall(callId, {
+        type: 'call_status_update',
+        callId,
+        status,
+        metadata,
+        timestamp: new Date().toISOString()
+    });
+};
+
+global.broadcastNewLeadAssignment = (agentId, assignment) => {
+    global.broadcastToAgent(agentId, {
+        type: 'new_lead_assigned',
+        assignment,
+        timestamp: new Date().toISOString()
+    });
+};
+
+global.broadcastAnalysisComplete = (callId, analysis) => {
+    global.broadcastToCall(callId, {
+        type: 'analysis_complete',
+        callId,
+        analysis,
+        timestamp: new Date().toISOString()
+    });
+};
+
+global.broadcastAgentStatusChange = (agentId, status, metadata = {}) => {
+    global.broadcastToAgent(agentId, {
+        type: 'agent_status_change',
+        agentId,
+        status,
+        metadata,
+        timestamp: new Date().toISOString()
+    });
+};
+
+global.broadcastWarmTransferRequest = (agentId, transferData) => {
+    global.broadcastToAgent(agentId, {
+        type: 'warm_transfer_request',
+        transferData,
+        timestamp: new Date().toISOString()
+    });
+};
+
+global.broadcastCreditUpdate = (organizationId, creditData) => {
+    global.broadcastToOrganization(organizationId, {
+        type: 'credit_update',
+        creditData,
+        timestamp: new Date().toISOString()
+    });
+};
+
+global.broadcastTeamPerformanceUpdate = (organizationId, performanceData) => {
+    global.broadcastToOrganization(organizationId, {
+        type: 'team_performance_update',
+        performanceData,
+        timestamp: new Date().toISOString()
     });
 };
 

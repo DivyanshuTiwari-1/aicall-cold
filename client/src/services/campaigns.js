@@ -1,51 +1,74 @@
-import api from './api';
+import axios from 'axios';
 
-export const campaignsAPI = {
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000';
+
+const campaignsAPI = {
     // Get all campaigns
-    getCampaigns: async(params = {}) => {
-        const response = await api.get('/campaigns', { params });
+    getCampaigns: async () => {
+        const response = await axios.get(`${API_BASE_URL}/api/v1/campaigns`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     },
 
     // Get single campaign
-    getCampaign: async(id) => {
-        const response = await api.get(`/campaigns/${id}`);
+    getCampaign: async (id) => {
+        const response = await axios.get(`${API_BASE_URL}/api/v1/campaigns/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     },
 
     // Create campaign
-    createCampaign: async(campaignData) => {
-        const response = await api.post('/campaigns', campaignData);
+    createCampaign: async (data) => {
+        const response = await axios.post(`${API_BASE_URL}/api/v1/campaigns`, data, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     },
 
     // Update campaign
-    updateCampaign: async(id, campaignData) => {
-        const response = await api.put(`/campaigns/${id}`, campaignData);
+    updateCampaign: async (id, data) => {
+        const response = await axios.put(`${API_BASE_URL}/api/v1/campaigns/${id}`, data, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     },
 
     // Delete campaign
-    deleteCampaign: async(id) => {
-        const response = await api.delete(`/campaigns/${id}`);
+    deleteCampaign: async (id) => {
+        const response = await axios.delete(`${API_BASE_URL}/api/v1/campaigns/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     },
 
-    // Start campaign
-    startCampaign: async(id) => {
-        const response = await api.post(`/campaigns/${id}/start`);
-        return response.data;
-    },
-
-    // Pause campaign
-    pauseCampaign: async(id) => {
-        const response = await api.post(`/campaigns/${id}/pause`);
-        return response.data;
-    },
-
-    // Stop campaign
-    stopCampaign: async(id) => {
-        const response = await api.post(`/campaigns/${id}/stop`);
+    // Get campaign stats
+    getCampaignStats: async (id) => {
+        const response = await axios.get(`${API_BASE_URL}/api/v1/campaigns/${id}/stats`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     }
 };
+
+export { campaignsAPI };
+export default campaignsAPI;

@@ -1,111 +1,58 @@
 const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 const logger = require('../utils/logger');
 
 const router = express.Router();
 
 // Validation schemas
-const campaignSchema = Joi.object({
-    name: Joi.string().min(2).max(255).required(),
-    type: Joi.string().valid('sales', 'recruitment').required(),
-    voice_persona: Joi.string().default('professional'),
+const createCampaignSchema = Joi.object({
+    name: Joi.string().min(1).max(255).required(),
+    type: Joi.string().valid('sales', 'marketing', 'follow_up', 'recruitment').required(),
+    status: Joi.string().valid('draft', 'active', 'paused', 'completed').default('draft'),
+    description: Joi.string().max(1000).optional(),
+    voice_persona: Joi.string().valid('professional', 'casual', 'empathetic', 'enthusiastic').default('professional'),
+    language: Joi.string().default('en-US'),
+    accent: Joi.string().default('professional'),
     auto_retry: Joi.boolean().default(true),
     best_time_enabled: Joi.boolean().default(true),
     emotion_detection: Joi.boolean().default(true),
     script_id: Joi.string().uuid().optional(),
+    callSettings: Joi.object({
+        maxConcurrentCalls: Joi.number().integer().min(1).max(10).default(2),
+        retryAttempts: Joi.number().integer().min(0).max(5).default(3),
+        retryDelayMinutes: Joi.number().integer().min(1).max(1440).default(30),
+        callTimeoutSeconds: Joi.number().integer().min(10).max(300).default(30)
+    }).optional(),
     settings: Joi.object().default({})
 });
 
 const updateCampaignSchema = Joi.object({
-    name: Joi.string().min(2).max(255).optional(),
+    name: Joi.string().min(1).max(255).optional(),
+    type: Joi.string().valid('sales', 'marketing', 'follow_up', 'recruitment').optional(),
     status: Joi.string().valid('draft', 'active', 'paused', 'completed').optional(),
-    voice_persona: Joi.string().optional(),
+    description: Joi.string().max(1000).optional(),
+    voice_persona: Joi.string().valid('professional', 'casual', 'empathetic', 'enthusiastic').optional(),
+    language: Joi.string().optional(),
+    accent: Joi.string().optional(),
     auto_retry: Joi.boolean().optional(),
     best_time_enabled: Joi.boolean().optional(),
     emotion_detection: Joi.boolean().optional(),
     script_id: Joi.string().uuid().optional(),
+    callSettings: Joi.object({
+        maxConcurrentCalls: Joi.number().integer().min(1).max(10).optional(),
+        retryAttempts: Joi.number().integer().min(0).max(5).optional(),
+        retryDelayMinutes: Joi.number().integer().min(1).max(1440).optional(),
+        callTimeoutSeconds: Joi.number().integer().min(10).max(300).optional()
+    }).optional(),
     settings: Joi.object().optional()
 });
 
-// Create new campaign
-router.post('/', async(req, res) => {
+// Get all campaigns
+router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
-        const { error, value } = campaignSchema.validate(req.body);
-        if (error) {
-            return res.status(400).json({
-                success: false,
-                message: 'Validation error',
-                errors: error.details.map(d => d.message)
-            });
-        }
-
-        const {
-            name,
-            type,
-            voice_persona,
-            auto_retry,
-            best_time_enabled,
-            emotion_detection,
-            script_id,
-            settings
-        } = value;
-
-        const result = await query(`
-      INSERT INTO campaigns (
-        organization_id, name, type, voice_persona, auto_retry,
-        best_time_enabled, emotion_detection, script_id, settings
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING *
-    `, [
-            req.organizationId,
-            name,
-            type,
-            voice_persona,
-            auto_retry,
-            best_time_enabled,
-            emotion_detection,
-            script_id,
-            JSON.stringify(settings)
-        ]);
-
-        const campaign = result.rows[0];
-
-        logger.info(`Campaign created: ${campaign.id} by user ${req.user.id}`);
-
-        res.status(201).json({
-            success: true,
-            message: 'Campaign created successfully',
-            campaign: {
-                id: campaign.id,
-                name: campaign.name,
-                type: campaign.type,
-                status: campaign.status,
-                voicePersona: campaign.voice_persona,
-                autoRetry: campaign.auto_retry,
-                bestTimeEnabled: campaign.best_time_enabled,
-                emotionDetection: campaign.emotion_detection,
-                scriptId: campaign.script_id,
-                settings: campaign.settings,
-                createdAt: campaign.created_at,
-                updatedAt: campaign.updated_at
-            }
-        });
-
-    } catch (error) {
-        logger.error('Campaign creation error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to create campaign'
-        });
-    }
-});
-
-// Get campaigns
-router.get('/', async(req, res) => {
-    try {
-        const { status, type, limit = 50, offset = 0 } = req.query;
+        const { status, type } = req.query;
 
         let whereClause = 'WHERE c.organization_id = $1';
         const params = [req.organizationId];
@@ -113,57 +60,57 @@ router.get('/', async(req, res) => {
 
         if (status) {
             paramCount++;
-            whereClause += ` AND status = $${paramCount}`;
+            whereClause += ` AND c.status = $${paramCount}`;
             params.push(status);
         }
 
         if (type) {
             paramCount++;
-            whereClause += ` AND type = $${paramCount}`;
+            whereClause += ` AND c.type = $${paramCount}`;
             params.push(type);
         }
 
         const result = await query(`
-      SELECT
-        c.*,
-        COUNT(ct.id) as contact_count,
-        COUNT(cl.id) as call_count,
-        COUNT(CASE WHEN cl.status = 'completed' THEN 1 END) as completed_calls
-      FROM campaigns c
-      LEFT JOIN contacts ct ON c.id = ct.campaign_id
-      LEFT JOIN calls cl ON c.id = cl.campaign_id
-      ${whereClause}
-      GROUP BY c.id
-      ORDER BY c.created_at DESC
-      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-    `, [...params, parseInt(limit), parseInt(offset)]);
+            SELECT
+                c.*,
+                COUNT(ct.id) as contact_count,
+                COUNT(call.id) as calls_made,
+                false as automated_calls_active
+            FROM campaigns c
+            LEFT JOIN contacts ct ON c.id = ct.campaign_id
+            LEFT JOIN calls call ON c.id = call.campaign_id
+            ${whereClause}
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        `, params);
 
-        const campaigns = result.rows.map(campaign => ({
-            id: campaign.id,
-            name: campaign.name,
-            type: campaign.type,
-            status: campaign.status,
-            voicePersona: campaign.voice_persona,
-            autoRetry: campaign.auto_retry,
-            bestTimeEnabled: campaign.best_time_enabled,
-            emotionDetection: campaign.emotion_detection,
-            scriptId: campaign.script_id,
-            settings: campaign.settings,
-            contactCount: parseInt(campaign.contact_count),
-            callCount: parseInt(campaign.call_count),
-            completedCalls: parseInt(campaign.completed_calls),
-            createdAt: campaign.created_at,
-            updatedAt: campaign.updated_at
-        }));
+        const campaigns = result.rows.map(campaign => {
+            return {
+                id: campaign.id,
+                name: campaign.name,
+                type: campaign.type,
+                status: campaign.status,
+                description: campaign.description || '',
+                voicePersona: campaign.voice_persona,
+                language: campaign.language,
+                accent: campaign.accent,
+                autoRetry: campaign.auto_retry,
+                bestTimeEnabled: campaign.best_time_enabled,
+                emotionDetection: campaign.emotion_detection,
+                scriptId: campaign.script_id,
+                callSettings: campaign.call_settings || {},
+                settings: campaign.settings || {},
+                contactCount: parseInt(campaign.contact_count),
+                callsMade: parseInt(campaign.calls_made),
+                automatedCallsActive: campaign.automated_calls_active,
+                createdAt: campaign.created_at,
+                updatedAt: campaign.updated_at
+            };
+        });
 
         res.json({
             success: true,
-            campaigns,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                total: campaigns.length
-            }
+            campaigns
         });
 
     } catch (error) {
@@ -176,24 +123,22 @@ router.get('/', async(req, res) => {
 });
 
 // Get single campaign
-router.get('/:id', async(req, res) => {
+router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { id } = req.params;
 
         const result = await query(`
-      SELECT
-        c.*,
-        COUNT(ct.id) as contact_count,
-        COUNT(cl.id) as call_count,
-        COUNT(CASE WHEN cl.status = 'completed' THEN 1 END) as completed_calls,
-        COUNT(CASE WHEN cl.outcome = 'scheduled' THEN 1 END) as scheduled_calls,
-        COUNT(CASE WHEN cl.outcome = 'interested' THEN 1 END) as interested_calls
-      FROM campaigns c
-      LEFT JOIN contacts ct ON c.id = ct.campaign_id
-      LEFT JOIN calls cl ON c.id = cl.campaign_id
-      WHERE c.id = $1 AND c.organization_id = $2
-      GROUP BY c.id
-    `, [id, req.organizationId]);
+            SELECT
+                c.*,
+                COUNT(ct.id) as contact_count,
+                COUNT(call.id) as calls_made,
+                false as automated_calls_active
+            FROM campaigns c
+            LEFT JOIN contacts ct ON c.id = ct.campaign_id
+            LEFT JOIN calls call ON c.id = call.campaign_id
+            WHERE c.id = $1 AND c.organization_id = $2
+            GROUP BY c.id
+        `, [id, req.organizationId]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({
@@ -211,17 +156,19 @@ router.get('/:id', async(req, res) => {
                 name: campaign.name,
                 type: campaign.type,
                 status: campaign.status,
+                description: campaign.description || '',
                 voicePersona: campaign.voice_persona,
+                language: campaign.language,
+                accent: campaign.accent,
                 autoRetry: campaign.auto_retry,
                 bestTimeEnabled: campaign.best_time_enabled,
                 emotionDetection: campaign.emotion_detection,
                 scriptId: campaign.script_id,
-                settings: campaign.settings,
+                callSettings: campaign.call_settings || {},
+                settings: campaign.settings || {},
                 contactCount: parseInt(campaign.contact_count),
-                callCount: parseInt(campaign.call_count),
-                completedCalls: parseInt(campaign.completed_calls),
-                scheduledCalls: parseInt(campaign.scheduled_calls),
-                interestedCalls: parseInt(campaign.interested_calls),
+                callsMade: parseInt(campaign.calls_made),
+                automatedCallsActive: campaign.automated_calls_active,
                 createdAt: campaign.created_at,
                 updatedAt: campaign.updated_at
             }
@@ -236,12 +183,10 @@ router.get('/:id', async(req, res) => {
     }
 });
 
-// Update campaign
-router.put('/:id', async(req, res) => {
+// Create campaign
+router.post('/', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
-        const { id } = req.params;
-        const { error, value } = updateCampaignSchema.validate(req.body);
-
+        const { error, value } = createCampaignSchema.validate(req.body);
         if (error) {
             return res.status(400).json({
                 success: false,
@@ -250,35 +195,162 @@ router.put('/:id', async(req, res) => {
             });
         }
 
-        // Check if campaign exists
+        const {
+            name,
+            type,
+            status,
+            description,
+            voice_persona,
+            language,
+            accent,
+            auto_retry,
+            best_time_enabled,
+            emotion_detection,
+            script_id,
+            callSettings,
+            settings
+        } = value;
+
+        // Check if campaign name already exists in organization
         const existingCampaign = await query(
-            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
+            'SELECT id FROM campaigns WHERE name = $1 AND organization_id = $2',
+            [name, req.organizationId]
         );
 
-        if (existingCampaign.rows.length === 0) {
+        if (existingCampaign.rows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campaign name already exists'
+            });
+        }
+
+        const result = await query(`
+            INSERT INTO campaigns (
+                organization_id, name, type, status, description,
+                voice_persona, language, accent, auto_retry, best_time_enabled,
+                emotion_detection, script_id, call_settings, settings
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING *
+        `, [
+            req.organizationId,
+            name,
+            type,
+            status,
+            description,
+            voice_persona,
+            language,
+            accent,
+            auto_retry,
+            best_time_enabled,
+            emotion_detection,
+            script_id,
+            JSON.stringify(callSettings || {}),
+            JSON.stringify(settings || {})
+        ]);
+
+        const campaign = result.rows[0];
+
+        logger.info(`Campaign created: ${campaign.id} - ${campaign.name}`);
+
+        res.status(201).json({
+            success: true,
+            message: 'Campaign created successfully',
+            campaign: {
+                id: campaign.id,
+                name: campaign.name,
+                type: campaign.type,
+                status: campaign.status,
+                description: campaign.description || '',
+                voicePersona: campaign.voice_persona,
+                language: campaign.language,
+                accent: campaign.accent,
+                autoRetry: campaign.auto_retry,
+                bestTimeEnabled: campaign.best_time_enabled,
+                emotionDetection: campaign.emotion_detection,
+                scriptId: campaign.script_id,
+                callSettings: campaign.call_settings || {},
+                settings: campaign.settings || {},
+                createdAt: campaign.created_at,
+                updatedAt: campaign.updated_at
+            }
+        });
+
+    } catch (error) {
+        logger.error('Campaign creation error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create campaign'
+        });
+    }
+});
+
+// Update campaign
+router.put('/:id', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { error, value } = updateCampaignSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.details.map(d => d.message)
+            });
+        }
+
+        // Verify campaign exists and belongs to organization
+        const campaignCheck = await query(
+            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [id, req.organizationId]
+        );
+
+        if (campaignCheck.rows.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Campaign not found'
             });
         }
 
-        // Build update query dynamically
+        // Check if name is being changed and if it already exists
+        if (value.name) {
+            const existingCampaign = await query(
+                'SELECT id FROM campaigns WHERE name = $1 AND organization_id = $2 AND id != $3',
+                [value.name, req.organizationId, id]
+            );
+
+            if (existingCampaign.rows.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Campaign name already exists'
+                });
+            }
+        }
+
+        // Build update query
         const updates = [];
         const params = [];
         let paramCount = 0;
 
+        // Add field updates
         Object.keys(value).forEach(key => {
             if (value[key] !== undefined) {
-                paramCount++;
-                updates.push(`${key} = $${paramCount}`);
-                params.push(value[key]);
+                if (key === 'callSettings') {
+                    paramCount++;
+                    updates.push(`call_settings = $${paramCount}`);
+                    params.push(JSON.stringify(value[key]));
+                } else {
+                    paramCount++;
+                    updates.push(`${key} = $${paramCount}`);
+                    params.push(value[key]);
+                }
             }
         });
 
         if (updates.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'No valid fields to update'
+                message: 'No fields to update'
             });
         }
 
@@ -286,15 +358,15 @@ router.put('/:id', async(req, res) => {
         params.push(id, req.organizationId);
 
         const result = await query(`
-      UPDATE campaigns
-      SET ${updates.join(', ')}
-      WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
-      RETURNING *
-    `, params);
+            UPDATE campaigns
+            SET ${updates.join(', ')}
+            WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
+            RETURNING *
+        `, params);
 
         const campaign = result.rows[0];
 
-        logger.info(`Campaign updated: ${campaign.id} by user ${req.user.id}`);
+        logger.info(`Campaign updated: ${campaign.id} - ${campaign.name}`);
 
         res.json({
             success: true,
@@ -304,12 +376,8 @@ router.put('/:id', async(req, res) => {
                 name: campaign.name,
                 type: campaign.type,
                 status: campaign.status,
-                voicePersona: campaign.voice_persona,
-                autoRetry: campaign.auto_retry,
-                bestTimeEnabled: campaign.best_time_enabled,
-                emotionDetection: campaign.emotion_detection,
-                scriptId: campaign.script_id,
-                settings: campaign.settings,
+                description: campaign.description || '',
+                callSettings: campaign.call_settings || {},
                 updatedAt: campaign.updated_at
             }
         });
@@ -324,16 +392,17 @@ router.put('/:id', async(req, res) => {
 });
 
 // Delete campaign
-router.delete('/:id', async(req, res) => {
+router.delete('/:id', authenticateToken, requireRole('admin'), async(req, res) => {
     try {
         const { id } = req.params;
 
-        // Check if campaign exists
-        const existingCampaign = await query(
-            'SELECT id, name FROM campaigns WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
+        // Verify campaign exists and belongs to organization
+        const campaignCheck = await query(
+            'SELECT id, name FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [id, req.organizationId]
         );
 
-        if (existingCampaign.rows.length === 0) {
+        if (campaignCheck.rows.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Campaign not found'
@@ -342,7 +411,8 @@ router.delete('/:id', async(req, res) => {
 
         // Check if campaign has active calls
         const activeCalls = await query(
-            'SELECT COUNT(*) as count FROM calls WHERE campaign_id = $1 AND status IN ($2, $3)', [id, 'initiated', 'in_progress']
+            'SELECT COUNT(*) as count FROM calls WHERE campaign_id = $1 AND status IN ($2, $3)',
+            [id, 'initiated', 'in_progress']
         );
 
         if (parseInt(activeCalls.rows[0].count) > 0) {
@@ -352,9 +422,10 @@ router.delete('/:id', async(req, res) => {
             });
         }
 
-        await query('DELETE FROM campaigns WHERE id = $1 AND organization_id = $2', [id, req.organizationId]);
+        // Delete campaign (cascade will handle related records)
+        await query('DELETE FROM campaigns WHERE id = $1', [id]);
 
-        logger.info(`Campaign deleted: ${id} by user ${req.user.id}`);
+        logger.info(`Campaign deleted: ${id} - ${campaignCheck.rows[0].name}`);
 
         res.json({
             success: true,
@@ -370,110 +441,62 @@ router.delete('/:id', async(req, res) => {
     }
 });
 
-// Start campaign
-router.post('/:id/start', async(req, res) => {
+// Get campaign stats
+router.get('/:id/stats', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { id } = req.params;
 
-        // Update campaign status to active
-        const result = await query(`
-            UPDATE campaigns
-            SET status = 'active', updated_at = NOW()
-            WHERE id = $1 AND organization_id = $2
-            RETURNING *
-        `, [id, req.organizationId]);
+        // Verify campaign exists and belongs to organization
+        const campaignCheck = await query(
+            'SELECT id, name FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [id, req.organizationId]
+        );
 
-        if (result.rows.length === 0) {
+        if (campaignCheck.rows.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Campaign not found'
             });
         }
 
-        logger.info(`Campaign ${id} started by organization ${req.organizationId}`);
+        // Get campaign statistics
+        const statsResult = await query(`
+            SELECT
+                COUNT(DISTINCT ct.id) as total_contacts,
+                COUNT(call.id) as total_calls,
+                COUNT(CASE WHEN call.status = 'completed' THEN 1 END) as completed_calls,
+                COUNT(CASE WHEN call.outcome = 'scheduled' THEN 1 END) as scheduled_calls,
+                COUNT(CASE WHEN call.outcome = 'interested' THEN 1 END) as interested_calls,
+                COUNT(CASE WHEN call.outcome = 'not_interested' THEN 1 END) as not_interested_calls,
+                AVG(call.duration) as avg_duration,
+                SUM(call.cost) as total_cost
+            FROM campaigns c
+            LEFT JOIN contacts ct ON c.id = ct.campaign_id
+            LEFT JOIN calls call ON c.id = call.campaign_id
+            WHERE c.id = $1
+        `, [id]);
+
+        const stats = statsResult.rows[0];
+
         res.json({
             success: true,
-            message: 'Campaign started successfully',
-            campaign: result.rows[0]
+            stats: {
+                totalContacts: parseInt(stats.total_contacts),
+                totalCalls: parseInt(stats.total_calls),
+                completedCalls: parseInt(stats.completed_calls),
+                scheduledCalls: parseInt(stats.scheduled_calls),
+                interestedCalls: parseInt(stats.interested_calls),
+                notInterestedCalls: parseInt(stats.not_interested_calls),
+                avgDuration: parseFloat(stats.avg_duration) || 0,
+                totalCost: parseFloat(stats.total_cost) || 0
+            }
         });
 
     } catch (error) {
-        logger.error('Campaign start error:', error);
+        logger.error('Campaign stats error:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to start campaign'
-        });
-    }
-});
-
-// Pause campaign
-router.post('/:id/pause', async(req, res) => {
-    try {
-        const { id } = req.params;
-
-        // Update campaign status to paused
-        const result = await query(`
-            UPDATE campaigns
-            SET status = 'paused', updated_at = NOW()
-            WHERE id = $1 AND organization_id = $2
-            RETURNING *
-        `, [id, req.organizationId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Campaign not found'
-            });
-        }
-
-        logger.info(`Campaign ${id} paused by organization ${req.organizationId}`);
-        res.json({
-            success: true,
-            message: 'Campaign paused successfully',
-            campaign: result.rows[0]
-        });
-
-    } catch (error) {
-        logger.error('Campaign pause error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to pause campaign'
-        });
-    }
-});
-
-// Stop campaign
-router.post('/:id/stop', async(req, res) => {
-    try {
-        const { id } = req.params;
-
-        // Update campaign status to completed
-        const result = await query(`
-            UPDATE campaigns
-            SET status = 'completed', updated_at = NOW()
-            WHERE id = $1 AND organization_id = $2
-            RETURNING *
-        `, [id, req.organizationId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Campaign not found'
-            });
-        }
-
-        logger.info(`Campaign ${id} stopped by organization ${req.organizationId}`);
-        res.json({
-            success: true,
-            message: 'Campaign stopped successfully',
-            campaign: result.rows[0]
-        });
-
-    } catch (error) {
-        logger.error('Campaign stop error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to stop campaign'
+            message: 'Failed to fetch campaign stats'
         });
     }
 });

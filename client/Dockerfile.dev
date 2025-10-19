@@ -9,14 +9,15 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source code
-COPY . .
-
 # Expose port
 EXPOSE 3001
 
-# Start development server with hot reloading
-# Set HOST=0.0.0.0 to make the dev server accessible from outside the container
+# Set environment variables for development
 ENV HOST=0.0.0.0
-CMD ["npm", "start"]
+ENV PORT=3001
+ENV CHOKIDAR_USEPOLLING=true
+ENV WATCHPACK_POLLING=true
+ENV REACT_APP_API_URL=http://localhost:3000/api/v1
 
+# Start development server with hot reloading
+CMD ["npm", "start"]

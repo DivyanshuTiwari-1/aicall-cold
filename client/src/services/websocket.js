@@ -1,145 +1,184 @@
-import io from 'socket.io-client';
-
 class WebSocketService {
-    constructor() {
-        this.socket = null;
-        this.isConnected = false;
+  constructor() {
+    this.ws = null;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectInterval = 5000;
+    this.listeners = new Map();
+    this.isConnected = false;
+    this.token = null;
+  }
+
+  connect(token) {
+    this.token = token;
+    const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
+
+    try {
+      this.ws = new WebSocket(`${wsUrl}?token=${token}`);
+
+      this.ws.onopen = () => {
+        console.log('WebSocket connected');
+        this.isConnected = true;
         this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        this.reconnectDelay = 1000;
-    }
+        this.emit('connected');
+      };
 
-    connect() {
-        if (this.socket && this.isConnected) {
-            return this.socket;
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this.handleMessage(data);
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
         }
+      };
 
-        const wsUrl = process.env.REACT_APP_WS_URL || 'http://localhost:3000';
+      this.ws.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason);
+        this.isConnected = false;
+        this.emit('disconnected');
 
-        this.socket = io(wsUrl, {
-            transports: ['websocket', 'polling'],
-            autoConnect: true,
-            reconnection: true,
-            reconnectionAttempts: this.maxReconnectAttempts,
-            reconnectionDelay: this.reconnectDelay,
-        });
-
-        this.socket.on('connect', () => {
-            console.log('WebSocket connected');
-            this.isConnected = true;
-            this.reconnectAttempts = 0;
-        });
-
-        this.socket.on('disconnect', () => {
-            console.log('WebSocket disconnected');
-            this.isConnected = false;
-        });
-
-        this.socket.on('connect_error', (error) => {
-            console.error('WebSocket connection error:', error);
-            this.isConnected = false;
-            this.reconnectAttempts++;
-        });
-
-        this.socket.on('reconnect', (attemptNumber) => {
-            console.log(`WebSocket reconnected after ${attemptNumber} attempts`);
-            this.isConnected = true;
-            this.reconnectAttempts = 0;
-        });
-
-        this.socket.on('reconnect_error', (error) => {
-            console.error('WebSocket reconnection error:', error);
-        });
-
-        this.socket.on('reconnect_failed', () => {
-            console.error('WebSocket reconnection failed');
-            this.isConnected = false;
-        });
-
-        return this.socket;
-    }
-
-    disconnect() {
-        if (this.socket) {
-            this.socket.disconnect();
-            this.socket = null;
-            this.isConnected = false;
+        if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.scheduleReconnect();
         }
+      };
+
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        this.emit('error', error);
+      };
+
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      this.emit('error', error);
+    }
+  }
+
+  scheduleReconnect() {
+    this.reconnectAttempts++;
+    const delay = this.reconnectInterval * Math.pow(2, this.reconnectAttempts - 1);
+
+    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+    setTimeout(() => {
+      if (this.token) {
+        this.connect(this.token);
+      }
+    }, delay);
+  }
+
+  handleMessage(data) {
+    const { type, payload } = data;
+
+    // Emit specific event types
+    if (type) {
+      this.emit(type, payload);
     }
 
-    emit(event, data) {
-        if (this.socket && this.isConnected) {
-            this.socket.emit(event, data);
-        } else {
-            console.warn('WebSocket not connected, cannot emit event:', event);
+    // Emit generic message event
+    this.emit('message', data);
+  }
+
+  // Event listener management
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event).push(callback);
+  }
+
+  off(event, callback) {
+    if (this.listeners.has(event)) {
+      const callbacks = this.listeners.get(event);
+      const index = callbacks.indexOf(callback);
+      if (index > -1) {
+        callbacks.splice(index, 1);
+      }
+    }
+  }
+
+  emit(event, data) {
+    if (this.listeners.has(event)) {
+      this.listeners.get(event).forEach(callback => {
+        try {
+          callback(data);
+        } catch (error) {
+          console.error(`Error in WebSocket event handler for ${event}:`, error);
         }
+      });
     }
+  }
 
-    on(event, callback) {
-        if (this.socket) {
-            this.socket.on(event, callback);
-        }
+  // Send message to server
+  send(type, payload) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type, payload }));
+    } else {
+      console.warn('WebSocket is not connected. Cannot send message.');
     }
+  }
 
-    off(event, callback) {
-        if (this.socket) {
-            this.socket.off(event, callback);
-        }
-    }
+  // Subscribe to specific events
+  subscribeToCallUpdates(callId, callback) {
+    this.send('subscribe_call', { callId });
+    this.on('call_status_update', (data) => {
+      if (data.callId === callId) {
+        callback(data);
+      }
+    });
+  }
 
-    // Specific methods for AI Dialer events
-    joinCallRoom(callId) {
-        this.emit('join_call_room', { callId });
-    }
+  subscribeToAgentUpdates(agentId, callback) {
+    this.send('subscribe_agent', { agentId });
+    this.on('agent_status_change', (data) => {
+      if (data.agentId === agentId) {
+        callback(data);
+      }
+    });
+  }
 
-    leaveCallRoom(callId) {
-        this.emit('leave_call_room', { callId });
-    }
+  subscribeToOrganizationUpdates(organizationId, callback) {
+    this.send('subscribe_organization', { organizationId });
+    this.on('organization_update', (data) => {
+      if (data.organizationId === organizationId) {
+        callback(data);
+      }
+    });
+  }
 
-    sendIntervention(callId, message) {
-        this.emit('send_intervention', { callId, message });
-    }
+  // Unsubscribe from events
+  unsubscribeFromCallUpdates(callId) {
+    this.send('unsubscribe_call', { callId });
+  }
 
-    updateCallStatus(callId, status) {
-        this.emit('update_call_status', { callId, status });
-    }
+  unsubscribeFromAgentUpdates(agentId) {
+    this.send('unsubscribe_agent', { agentId });
+  }
 
-    // Listen for specific AI Dialer events
-    onCallUpdate(callback) {
-        this.on('call_update', callback);
-    }
+  unsubscribeFromOrganizationUpdates(organizationId) {
+    this.send('unsubscribe_organization', { organizationId });
+  }
 
-    onConversationUpdate(callback) {
-        this.on('conversation_update', callback);
+  // Disconnect
+  disconnect() {
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnecting');
+      this.ws = null;
     }
+    this.isConnected = false;
+    this.listeners.clear();
+  }
 
-    onObjectionDetected(callback) {
-        this.on('objection_detected', callback);
-    }
-
-    onEmotionChange(callback) {
-        this.on('emotion_change', callback);
-    }
-
-    onCallEnded(callback) {
-        this.on('call_ended', callback);
-    }
-
-    onInterventionRequested(callback) {
-        this.on('intervention_requested', callback);
-    }
-
-    // Utility methods
-    isConnected() {
-        return this.isConnected;
-    }
-
-    getConnectionState() {
-        return this.socket ? this.socket.connected : false;
-    }
+  // Get connection status
+  getConnectionStatus() {
+    return {
+      isConnected: this.isConnected,
+      readyState: this.ws ? this.ws.readyState : WebSocket.CLOSED,
+      reconnectAttempts: this.reconnectAttempts,
+    };
+  }
 }
 
 // Create singleton instance
-const websocketAPI = new WebSocketService();
+const websocketService = new WebSocketService();
 
-export default websocketAPI;
+export default websocketService;

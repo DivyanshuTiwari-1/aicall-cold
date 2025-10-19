@@ -53,22 +53,22 @@ const ConnectionTest = () => {
   };
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md border">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">Backend Connection Status</h3>
+    <div className='bg-white p-6 rounded-lg shadow-md border'>
+      <div className='flex items-center justify-between mb-4'>
+        <h3 className='text-lg font-semibold'>Backend Connection Status</h3>
         <button
           onClick={testConnection}
           disabled={connectionStatus === 'testing'}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+          className='px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50'
         >
           {connectionStatus === 'testing' ? 'Testing...' : 'Test Again'}
         </button>
       </div>
 
       <div className={`p-4 rounded-lg ${getStatusColor()}`}>
-        <div className="flex items-center space-x-2">
-          <span className="text-2xl">{getStatusIcon()}</span>
-          <span className="font-medium">
+        <div className='flex items-center space-x-2'>
+          <span className='text-2xl'>{getStatusIcon()}</span>
+          <span className='font-medium'>
             {connectionStatus === 'connected' && 'Connected to Backend'}
             {connectionStatus === 'failed' && 'Connection Failed'}
             {connectionStatus === 'testing' && 'Testing Connection...'}
@@ -76,13 +76,13 @@ const ConnectionTest = () => {
         </div>
 
         {error && (
-          <div className="mt-2 text-sm">
+          <div className='mt-2 text-sm'>
             <strong>Error:</strong> {error}
           </div>
         )}
 
         {serverInfo && (
-          <div className="mt-2 text-sm">
+          <div className='mt-2 text-sm'>
             <div>
               <strong>Status:</strong> {serverInfo.status}
             </div>

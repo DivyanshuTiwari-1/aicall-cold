@@ -18,7 +18,7 @@ async function authenticateToken(req, res, next) {
 
         // Verify user still exists and is active
         const userResult = await query(
-            'SELECT id, email, first_name, last_name, role, is_active, organization_id FROM users WHERE id = $1', [decoded.userId]
+            'SELECT id, email, first_name, last_name, role, role_type, is_active, is_available, sip_extension, organization_id FROM users WHERE id = $1', [decoded.userId]
         );
 
         if (userResult.rows.length === 0) {
@@ -49,7 +49,7 @@ async function authenticateToken(req, res, next) {
     }
 }
 
-function requireRole(roles) {
+function requireRole(...allowedRoles) {
     return (req, res, next) => {
         if (!req.user) {
             return res.status(401).json({
@@ -58,18 +58,91 @@ function requireRole(roles) {
             });
         }
 
-        const userRole = req.user.role;
-        const allowedRoles = Array.isArray(roles) ? roles : [roles];
+        const userRoleType = req.user.role_type;
 
-        if (!allowedRoles.includes(userRole)) {
+        if (!allowedRoles.includes(userRoleType)) {
             return res.status(403).json({
                 success: false,
-                message: 'Insufficient permissions'
+                message: 'Access denied',
+                required: allowedRoles,
+                current: userRoleType
             });
         }
 
         next();
     };
+}
+
+function requireAdmin(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required'
+        });
+    }
+
+    if (req.user.role_type !== 'admin') {
+        return res.status(403).json({
+            success: false,
+            message: 'Admin access required'
+        });
+    }
+
+    next();
+}
+
+function requireManagerOrAdmin(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required'
+        });
+    }
+
+    if (!['admin', 'manager'].includes(req.user.role_type)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Manager or Admin access required'
+        });
+    }
+
+    next();
+}
+
+function requireAgentOrAbove(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required'
+        });
+    }
+
+    if (!['admin', 'manager', 'agent'].includes(req.user.role_type)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Agent access or above required'
+        });
+    }
+
+    next();
+}
+
+function requireDataUploaderOrAbove(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required'
+        });
+    }
+
+    if (!['admin', 'data_uploader'].includes(req.user.role_type)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Data Uploader access or above required'
+        });
+    }
+
+    next();
 }
 
 function requireOrganizationAccess(req, res, next) {
@@ -95,5 +168,9 @@ function requireOrganizationAccess(req, res, next) {
 module.exports = {
     authenticateToken,
     requireRole,
+    requireAdmin,
+    requireManagerOrAdmin,
+    requireAgentOrAbove,
+    requireDataUploaderOrAbove,
     requireOrganizationAccess
 };

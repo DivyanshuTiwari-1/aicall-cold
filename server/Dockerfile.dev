@@ -1,0 +1,19 @@
+# Development Dockerfile for Node.js backend with hot reloading
+FROM node:18-alpine
+
+WORKDIR /usr/src/app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Install nodemon for hot reloading
+RUN npm install -g nodemon
+
+# Expose port
+EXPOSE 3000
+
+# Start development server with hot reloading
+CMD ["npm", "run", "server:dev"]

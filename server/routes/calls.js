@@ -1,6 +1,7 @@
 const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -23,7 +24,7 @@ const completeCallSchema = Joi.object({
 });
 
 // Start a call
-router.post('/start', async(req, res) => {
+router.post('/start', authenticateToken, requireRole('agent', 'admin', 'manager'), async(req, res) => {
     try {
         const { error, value } = startCallSchema.validate(req.body);
         if (error) {
@@ -135,7 +136,7 @@ router.post('/start', async(req, res) => {
 });
 
 // Complete a call
-router.post('/complete/:call_id', async(req, res) => {
+router.post('/complete/:call_id', authenticateToken, requireRole('agent', 'admin', 'manager'), async(req, res) => {
     try {
         const { call_id } = req.params;
 
@@ -226,6 +227,23 @@ router.post('/complete/:call_id', async(req, res) => {
             );
         }
 
+        // Trigger lead reuse for missed/unpicked calls
+        if (call.outcome === 'no_answer' || call.outcome === 'busy' || call.outcome === 'missed') {
+            try {
+                const { processUnpickedLeads } = require('../services/lead-reuse');
+                // Process reuse asynchronously to avoid blocking the response
+                setImmediate(async () => {
+                    try {
+                        await processUnpickedLeads(req.organizationId);
+                    } catch (error) {
+                        logger.error('Error processing lead reuse after call completion:', error);
+                    }
+                });
+            } catch (error) {
+                logger.error('Error triggering lead reuse:', error);
+            }
+        }
+
         logger.info(`Call completed: ${call.id} with outcome ${call.outcome}`);
 
         res.json({
@@ -257,7 +275,7 @@ router.post('/complete/:call_id', async(req, res) => {
 });
 
 // Get call history
-router.get('/', async(req, res) => {
+router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const {
             campaign_id,
@@ -352,8 +370,66 @@ router.get('/', async(req, res) => {
     }
 });
 
+// Get campaign stats
+router.get('/campaign-stats', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        // Get total campaigns
+        const campaignsResult = await query(
+            'SELECT COUNT(*) as total FROM campaigns WHERE organization_id = $1',
+            [req.organizationId]
+        );
+        const totalCampaigns = parseInt(campaignsResult.rows[0].total);
+
+        // Get active calls
+        const activeCallsResult = await query(
+            'SELECT COUNT(*) as active FROM calls WHERE organization_id = $1 AND status IN ($2, $3)',
+            [req.organizationId, 'initiated', 'in_progress']
+        );
+        const activeCalls = parseInt(activeCallsResult.rows[0].active);
+
+        // Get total contacts
+        const contactsResult = await query(
+            'SELECT COUNT(*) as total FROM contacts WHERE organization_id = $1',
+            [req.organizationId]
+        );
+        const totalContacts = parseInt(contactsResult.rows[0].total);
+
+        // Get queued calls (contacts ready to be called)
+        const queuedCallsResult = await query(`
+            SELECT COUNT(*) as queued
+            FROM contacts c
+            WHERE c.organization_id = $1
+            AND c.status = 'new'
+            AND c.id NOT IN (
+                SELECT DISTINCT contact_id
+                FROM calls
+                WHERE organization_id = $1
+                AND status IN ('initiated', 'in_progress')
+            )
+        `, [req.organizationId]);
+        const queuedCalls = parseInt(queuedCallsResult.rows[0].queued);
+
+        res.json({
+            success: true,
+            stats: {
+                totalCampaigns,
+                activeCalls,
+                totalContacts,
+                queuedCalls
+            }
+        });
+
+    } catch (error) {
+        logger.error('Campaign stats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch campaign stats'
+        });
+    }
+});
+
 // Get single call
-router.get('/:id', async(req, res) => {
+router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -418,7 +494,7 @@ router.get('/:id', async(req, res) => {
 });
 
 // Update call status (for real-time updates)
-router.put('/:id/status', async(req, res) => {
+router.put('/:id/status', authenticateToken, requireRole('agent', 'admin', 'manager'), async(req, res) => {
     try {
         const { id } = req.params;
         const { status, duration, transcript, emotion, intent_score } = req.body;
@@ -531,7 +607,7 @@ router.put('/:id/status', async(req, res) => {
 });
 
 // Get call conversation context
-router.get('/:id/conversation', async(req, res) => {
+router.get('/:id/conversation', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -603,6 +679,174 @@ router.get('/:id/conversation', async(req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch call conversation context'
+        });
+    }
+});
+
+// Validation schema for automated calls
+const automatedCallSchema = Joi.object({
+    campaignId: Joi.string().uuid().required()
+});
+
+// Start automated calls for a campaign
+router.post('/automated/start', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const { error, value } = automatedCallSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.details.map(d => d.message)
+            });
+        }
+
+        const { campaignId } = value;
+
+        // Verify campaign exists and belongs to organization
+        const campaignCheck = await query(
+            'SELECT id, name, status FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [campaignId, req.organizationId]
+        );
+
+        if (campaignCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        const campaign = campaignCheck.rows[0];
+
+        if (campaign.status === 'completed') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot start automated calls for completed campaigns'
+            });
+        }
+
+        // Update campaign status to active if it's draft
+        if (campaign.status === 'draft') {
+            await query(
+                'UPDATE campaigns SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                ['active', campaignId]
+            );
+            logger.info(`Campaign ${campaignId} status updated from draft to active`);
+        }
+
+        // Start the automated call queue
+        try {
+            const { callQueue } = require('../services/queue');
+            await callQueue.startQueue(campaignId);
+
+            logger.info(`Automated calls started for campaign: ${campaignId}`);
+
+            res.json({
+                success: true,
+                message: 'Automated calls started successfully',
+                campaignId: campaignId
+            });
+        } catch (queueError) {
+            logger.error('Queue start error:', queueError);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to start automated call queue'
+            });
+        }
+
+    } catch (error) {
+        logger.error('Start automated calls error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to start automated calls'
+        });
+    }
+});
+
+// Stop automated calls for a campaign
+router.post('/automated/stop', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const { error, value } = automatedCallSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.details.map(d => d.message)
+            });
+        }
+
+        const { campaignId } = value;
+
+        // Stop the automated call queue
+        try {
+            const { callQueue } = require('../services/queue');
+            await callQueue.stopQueue(campaignId);
+
+            logger.info(`Automated calls stopped for campaign: ${campaignId}`);
+
+            res.json({
+                success: true,
+                message: 'Automated calls stopped successfully',
+                campaignId: campaignId
+            });
+        } catch (queueError) {
+            logger.error('Queue stop error:', queueError);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to stop automated call queue'
+            });
+        }
+
+    } catch (error) {
+        logger.error('Stop automated calls error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to stop automated calls'
+        });
+    }
+});
+
+// Get queue status for a campaign
+router.get('/queue/status/:campaignId', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const { campaignId } = req.params;
+
+        // Verify campaign exists and belongs to organization
+        const campaignCheck = await query(
+            'SELECT id, name FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [campaignId, req.organizationId]
+        );
+
+        if (campaignCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        // Get queue status from the queue service
+        try {
+            const { AutomatedCallQueue } = require('../services/queue');
+            const queue = new AutomatedCallQueue();
+            const status = await queue.getQueueStatus(campaignId);
+
+            res.json({
+                success: true,
+                campaignId: campaignId,
+                status: status
+            });
+        } catch (queueError) {
+            logger.error('Queue status error:', queueError);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to get queue status'
+            });
+        }
+
+    } catch (error) {
+        logger.error('Queue status error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get queue status'
         });
     }
 });

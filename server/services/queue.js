@@ -9,7 +9,7 @@ const router = express.Router();
 // Automated Call Queue System
 class AutomatedCallQueue {
     constructor() {
-        this.activeQueues = new Map();
+        this.activeQueues = new Map(); // Key: agentId, Value: queue state
         this.callPacing = new Map();
         this.isRunning = false;
         this.maxConcurrentCalls = parseInt(process.env.MAX_CONCURRENT_CALLS) || 5;
@@ -18,54 +18,79 @@ class AutomatedCallQueue {
         this.retryDelay = parseInt(process.env.RETRY_DELAY_MS) || 300000; // 5 minutes
     }
 
-    async startQueue(campaignId) {
+    async startQueue(agentId, campaignId = null) {
         try {
-            if (this.activeQueues.has(campaignId)) {
-                logger.warn(`Queue already active for campaign ${campaignId}`);
+            // Handle both agent-specific and campaign-wide queues
+            const queueKey = campaignId || agentId;
+
+            if (this.activeQueues.has(queueKey)) {
+                logger.warn(`Queue already active for ${campaignId ? 'campaign' : 'agent'} ${queueKey}`);
                 return;
             }
 
-            const campaign = await this.getCampaignDetails(campaignId);
-            if (!campaign) {
-                throw new Error('Campaign not found');
+            // Get campaign details if campaignId provided
+            let campaign = null;
+            if (campaignId) {
+                campaign = await this.getCampaignDetails(campaignId);
+                if (!campaign) {
+                    throw new Error('Campaign not found');
+                }
+                if (campaign.status !== 'active') {
+                    throw new Error('Campaign is not active');
+                }
             }
 
-            if (campaign.status !== 'active') {
-                throw new Error('Campaign is not active');
+            // For agent-specific queues, verify assigned leads
+            let assignedLeads = [];
+            if (agentId && campaignId) {
+                assignedLeads = await this.getAgentAssignedLeads(agentId, campaignId);
+                if (assignedLeads.length === 0) {
+                    throw new Error('No assigned leads found for agent');
+                }
+            } else if (campaignId) {
+                // For campaign-wide queues, get all contacts in campaign
+                const result = await query(`
+                    SELECT * FROM contacts
+                    WHERE campaign_id = $1
+                    AND status IN ('pending', 'retry', 'new')
+                    ORDER BY priority DESC, created_at ASC
+                `, [campaignId]);
+                assignedLeads = result.rows;
             }
 
             // Initialize queue state
-            this.activeQueues.set(campaignId, {
-                campaignId,
+            this.activeQueues.set(queueKey, {
+                agentId: agentId || null,
+                campaignId: campaignId,
                 status: 'running',
                 startTime: new Date(),
-                totalContacts: 0,
+                totalContacts: assignedLeads.length,
                 processedContacts: 0,
                 successfulCalls: 0,
                 failedCalls: 0,
                 lastCallTime: null,
                 nextCallTime: new Date(),
-                settings: campaign.settings || {}
+                settings: campaign?.settings || {}
             });
 
             // Start the queue processing
-            this.processQueue(campaignId);
-            logger.info(`Automated queue started for campaign ${campaignId}`);
+            this.processQueue(queueKey);
+            logger.info(`Automated queue started for ${campaignId ? 'campaign' : 'agent'} ${queueKey}`);
         } catch (error) {
-            logger.error(`Failed to start queue for campaign ${campaignId}:`, error);
+            logger.error(`Failed to start queue for ${campaignId ? 'campaign' : 'agent'} ${agentId || campaignId}:`, error);
             throw error;
         }
     }
 
-    async stopQueue(campaignId) {
-        if (this.activeQueues.has(campaignId)) {
-            this.activeQueues.delete(campaignId);
-            logger.info(`Queue stopped for campaign ${campaignId}`);
+    async stopQueue(queueKey) {
+        if (this.activeQueues.has(queueKey)) {
+            this.activeQueues.delete(queueKey);
+            logger.info(`Queue stopped for ${queueKey}`);
         }
     }
 
-    async processQueue(campaignId) {
-        const queue = this.activeQueues.get(campaignId);
+    async processQueue(queueKey) {
+        const queue = this.activeQueues.get(queueKey);
         if (!queue || queue.status !== 'running') {
             return;
         }
@@ -75,15 +100,15 @@ class AutomatedCallQueue {
             const now = new Date();
             if (now < queue.nextCallTime) {
                 // Schedule next check
-                setTimeout(() => this.processQueue(campaignId), 1000);
+                setTimeout(() => this.processQueue(queueKey), 1000);
                 return;
             }
 
             // Get next contact to call
-            const contact = await this.getNextContact(campaignId);
+            const contact = await this.getNextContact(queue.campaignId);
             if (!contact) {
-                logger.info(`No more contacts to call for campaign ${campaignId}`);
-                await this.stopQueue(campaignId);
+                logger.info(`No more contacts to call for ${queue.agentId ? 'agent' : 'campaign'} ${queueKey}`);
+                await this.stopQueue(queueKey);
                 return;
             }
 
@@ -91,12 +116,12 @@ class AutomatedCallQueue {
             const activeCalls = await this.getActiveCallCount();
             if (activeCalls >= this.maxConcurrentCalls) {
                 // Wait and retry
-                setTimeout(() => this.processQueue(campaignId), 5000);
+                setTimeout(() => this.processQueue(queueKey), 5000);
                 return;
             }
 
             // Make the call
-            await this.initiateCall(campaignId, contact);
+            await this.initiateCall(queue.campaignId, contact);
 
             // Update queue state
             queue.processedContacts++;
@@ -104,12 +129,12 @@ class AutomatedCallQueue {
             queue.nextCallTime = new Date(now.getTime() + this.callInterval);
 
             // Schedule next call
-            setTimeout(() => this.processQueue(campaignId), this.callInterval);
+            setTimeout(() => this.processQueue(queueKey), this.callInterval);
 
         } catch (error) {
-            logger.error(`Error processing queue for campaign ${campaignId}:`, error);
+            logger.error(`Error processing queue for ${queue.agentId ? 'agent' : 'campaign'} ${queueKey}:`, error);
             // Wait before retrying
-            setTimeout(() => this.processQueue(campaignId), 30000);
+            setTimeout(() => this.processQueue(queueKey), 30000);
         }
     }
 
@@ -182,6 +207,26 @@ class AutomatedCallQueue {
         }
     }
 
+    async getAgentAssignedLeads(agentId, campaignId) {
+        try {
+            const result = await query(`
+                SELECT c.*, la.status as assignment_status, la.assigned_at
+                FROM contacts c
+                JOIN lead_assignments la ON c.id = la.contact_id
+                WHERE la.assigned_to = $1
+                AND c.campaign_id = $2
+                AND la.status IN ('pending', 'in_progress')
+                AND c.status IN ('new', 'retry_pending', 'pending')
+                AND (la.expires_at IS NULL OR la.expires_at > NOW())
+                ORDER BY la.assigned_at ASC
+            `, [agentId, campaignId]);
+            return result.rows;
+        } catch (error) {
+            logger.error('Error getting agent assigned leads:', error);
+            return [];
+        }
+    }
+
     async getCampaignDetails(campaignId) {
         try {
             const result = await query(`
@@ -230,14 +275,18 @@ const callQueue = new AutomatedCallQueue();
 cron.schedule('*/30 * * * * *', async() => {
     try {
         // Check for campaigns that should be running but aren't
+        // Note: This monitoring is simplified since we track active queues in memory
         const result = await query(`
             SELECT id FROM campaigns
             WHERE status = 'active'
-            AND id NOT IN (SELECT campaign_id FROM call_queue_status WHERE status = 'running')
         `);
 
+        // Only start queues that aren't already active
         for (const campaign of result.rows) {
-            await callQueue.startQueue(campaign.id);
+            if (!callQueue.activeQueues.has(campaign.id)) {
+                logger.info(`Auto-starting queue for campaign ${campaign.id}`);
+                await callQueue.startQueue(campaign.id);
+            }
         }
     } catch (error) {
         logger.error('Queue monitoring error:', error);
@@ -248,7 +297,7 @@ cron.schedule('*/30 * * * * *', async() => {
 router.post('/start/:campaignId', async(req, res) => {
     try {
         const { campaignId } = req.params;
-        await callQueue.startQueue(campaignId);
+        await callQueue.startQueue(null, campaignId);
 
         res.json({
             success: true,

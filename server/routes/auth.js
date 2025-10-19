@@ -69,10 +69,10 @@ router.post('/register', async(req, res) => {
         VALUES ($1, $2, '{"timezone": "UTC", "features": ["emotion_detection"]}')
         RETURNING id
       )
-      INSERT INTO users (organization_id, email, password_hash, first_name, last_name, role)
-      SELECT new_org.id, $3, $4, $5, $6, 'admin'
+      INSERT INTO users (organization_id, email, password_hash, first_name, last_name, role, role_type)
+      SELECT new_org.id, $3, $4, $5, $6, 'admin', 'admin'
       FROM new_org
-      RETURNING id, organization_id, email, first_name, last_name, role
+      RETURNING id, organization_id, email, first_name, last_name, role, role_type
     `, [organizationName, domain, email, passwordHash, firstName, lastName]);
 
         const user = result.rows[0];
@@ -94,7 +94,9 @@ router.post('/register', async(req, res) => {
                 firstName: user.first_name,
                 lastName: user.last_name,
                 role: user.role,
-                organizationId: user.organization_id
+                roleType: user.role_type,
+                organizationId: user.organization_id,
+                organizationName: organizationName
             }
         });
 
@@ -123,7 +125,7 @@ router.post('/login', async(req, res) => {
 
         // Find user with organization info
         const userResult = await query(`
-      SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.role, u.is_active,
+      SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.role, u.role_type, u.is_active,
              o.id as organization_id, o.name as organization_name
       FROM users u
       JOIN organizations o ON u.organization_id = o.id
@@ -172,6 +174,7 @@ router.post('/login', async(req, res) => {
                 firstName: user.first_name,
                 lastName: user.last_name,
                 role: user.role,
+                roleType: user.role_type,
                 organizationId: user.organization_id,
                 organizationName: user.organization_name
             }
@@ -202,7 +205,7 @@ router.get('/profile', async(req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         const userResult = await query(`
-      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.is_active,
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.role_type, u.is_active,
              o.id as organization_id, o.name as organization_name, o.settings
       FROM users u
       JOIN organizations o ON u.organization_id = o.id
@@ -226,6 +229,7 @@ router.get('/profile', async(req, res) => {
                 firstName: user.first_name,
                 lastName: user.last_name,
                 role: user.role,
+                roleType: user.role_type,
                 organizationId: user.organization_id,
                 organizationName: user.organization_name,
                 organizationSettings: user.settings

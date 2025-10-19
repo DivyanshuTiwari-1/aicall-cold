@@ -1,11 +1,10 @@
-version: "3.9"
-
 services:
   # 🧠 AI Dialer Backend
   ai_dialer:
-    build: .
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
     container_name: ai_dialer_server
-    command: npm run server:dev
     ports:
       - "3000:3000"
     environment:
@@ -23,6 +22,7 @@ services:
 
       # API
       - NODE_ENV=development
+      - DOCKER_ENV=true
       - PORT=3000
       - API_URL=http://localhost:3000/api/v1
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
@@ -33,11 +33,21 @@ services:
       - ARI_USERNAME=ai-dialer
       - ARI_PASSWORD=ai-dialer-password
 
+      # Telnyx Configuration (for outbound calls)
+      - TELNYX_USERNAME=info@pitchnhire.com
+      - TELNYX_DOMAIN=sip.telnyx.com
+      - TELNYX_PASSWORD=DxZU$m4#GuFhRTp
+      - TELNYX_SIP_URI=sip:info@pitchnhire.com@sip.telnyx.com
+      - TELNYX_IP_RANGE=66.109.0.0/16
+      - TELNYX_CALLER_ID=+12025550123
+      - TELNYX_DID=+12025550123
+      - TELNYX_TIMEOUT=30
+
       # Voice Stack
       - VOICE_STACK=self_hosted
 
       # CORS - Allow both local frontend and Docker frontend
-      - CORS_ORIGIN=http://localhost:3001,http://localhost:3000
+      - CORS_ORIGIN=http://localhost:3001,http://localhost:3000,http://frontend:3001
 
       # Logging
       - LOG_LEVEL=info
@@ -67,9 +77,9 @@ services:
       - MAX_CALL_DURATION=180
       - MAX_CONCURRENT_CALLS=10
 
-      # Rate Limiting
+      # Rate Limiting - More generous for development
       - RATE_LIMIT_WINDOW_MS=900000
-      - RATE_LIMIT_MAX_REQUESTS=100
+      - RATE_LIMIT_MAX_REQUESTS=1000
 
       # Health Check
       - HEALTH_CHECK_INTERVAL=30000
@@ -86,21 +96,31 @@ services:
     networks:
       - ai-dialer-net
     volumes:
-      - .:/usr/src/app
+      - ./server:/usr/src/app
       - ./logs:/usr/src/app/logs
       - ./audio-cache:/usr/src/app/audio-cache
+      - /usr/src/app/node_modules
     restart: always
 
   # 🌐 AI Dialer Frontend
   frontend:
-    build: ./client
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
     container_name: ai_dialer_frontend
     ports:
-      - "3001:80"
+      - "3001:3001"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3000/api/v1
+      - REACT_APP_WS_URL=ws://ai_dialer:3000
+      - REACT_APP_API_BASE_URL=http://localhost:3000
     depends_on:
       - ai_dialer
     networks:
       - ai-dialer-net
+    volumes:
+      - ./client:/app
+      - /app/node_modules
     restart: always
 
   # ☎️ Asterisk PBX Server
@@ -151,6 +171,5 @@ services:
 networks:
   ai-dialer-net:
     driver: bridge
-
 volumes:
   pg_data:

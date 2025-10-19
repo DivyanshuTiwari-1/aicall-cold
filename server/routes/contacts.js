@@ -2,6 +2,7 @@ const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -37,7 +38,7 @@ const bulkContactSchema = Joi.object({
 });
 
 // Create single contact
-router.post('/', async(req, res) => {
+router.post('/', authenticateToken, async(req, res) => {
     try {
         const { error, value } = contactSchema.validate(req.body);
         if (error) {
@@ -142,7 +143,7 @@ router.post('/', async(req, res) => {
 });
 
 // Bulk upload contacts
-router.post('/bulk', async(req, res) => {
+router.post('/bulk', authenticateToken, async(req, res) => {
     try {
         const { error, value } = bulkContactSchema.validate(req.body);
         if (error) {
@@ -233,7 +234,7 @@ router.post('/bulk', async(req, res) => {
 });
 
 // Import contacts (alias for bulk)
-router.post('/import', async(req, res) => {
+router.post('/import', authenticateToken, async(req, res) => {
     try {
         const { error, value } = bulkContactSchema.validate(req.body);
         if (error) {
@@ -323,8 +324,46 @@ router.post('/import', async(req, res) => {
     }
 });
 
+// Get contact statistics
+router.get('/stats', authenticateToken, async(req, res) => {
+    try {
+        const result = await query(`
+            SELECT
+                COUNT(*) as total_contacts,
+                COUNT(CASE WHEN status = 'contacted' THEN 1 END) as contacted,
+                COUNT(CASE WHEN status = 'interested' THEN 1 END) as interested,
+                COUNT(CASE WHEN status = 'not_interested' THEN 1 END) as not_interested,
+                COUNT(CASE WHEN status = 'do_not_call' THEN 1 END) as do_not_call,
+                COUNT(CASE WHEN last_contacted IS NOT NULL THEN 1 END) as assigned
+            FROM contacts
+            WHERE organization_id = $1
+        `, [req.organizationId]);
+
+        const stats = result.rows[0];
+        const conversionRate = stats.contacted > 0 ?
+            Math.round((stats.interested / stats.contacted) * 100) : 0;
+
+        res.json({
+            success: true,
+            stats: {
+                totalContacts: parseInt(stats.total_contacts),
+                contacted: parseInt(stats.contacted),
+                assigned: parseInt(stats.assigned),
+                conversionRate: conversionRate
+            }
+        });
+
+    } catch (error) {
+        logger.error('Contact stats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch contact statistics'
+        });
+    }
+});
+
 // Get contacts
-router.get('/', async(req, res) => {
+router.get('/', authenticateToken, async(req, res) => {
     try {
         const {
             campaign_id,
@@ -360,11 +399,17 @@ router.get('/', async(req, res) => {
       SELECT
         c.*,
         COUNT(cl.id) as call_count,
-        MAX(cl.created_at) as last_call_date
+        MAX(cl.created_at) as last_call_date,
+        la.assigned_to,
+        la.status as assignment_status,
+        u.first_name as assigned_agent_first_name,
+        u.last_name as assigned_agent_last_name
       FROM contacts c
       LEFT JOIN calls cl ON c.id = cl.contact_id
+      LEFT JOIN lead_assignments la ON c.id = la.contact_id AND la.status IN ('pending', 'in_progress')
+      LEFT JOIN users u ON la.assigned_to = u.id
       ${whereClause}
-      GROUP BY c.id
+      GROUP BY c.id, la.assigned_to, la.status, u.first_name, u.last_name
       ORDER BY c.created_at DESC
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `, [...params, parseInt(limit), parseInt(offset)]);
@@ -386,7 +431,12 @@ router.get('/', async(req, res) => {
             lastCallDate: contact.last_call_date,
             lastContacted: contact.last_contacted,
             createdAt: contact.created_at,
-            updatedAt: contact.updated_at
+            updatedAt: contact.updated_at,
+            assignedTo: contact.assigned_to,
+            assignmentStatus: contact.assignment_status,
+            assignedAgentName: contact.assigned_agent_first_name && contact.assigned_agent_last_name
+                ? `${contact.assigned_agent_first_name} ${contact.assigned_agent_last_name}`
+                : null
         }));
 
         res.json({
@@ -409,7 +459,7 @@ router.get('/', async(req, res) => {
 });
 
 // Get single contact
-router.get('/:id', async(req, res) => {
+router.get('/:id', authenticateToken, async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -466,7 +516,7 @@ router.get('/:id', async(req, res) => {
 });
 
 // Update contact
-router.put('/:id', async(req, res) => {
+router.put('/:id', authenticateToken, async(req, res) => {
     try {
         const { id } = req.params;
         const updateSchema = Joi.object({
@@ -568,7 +618,7 @@ router.put('/:id', async(req, res) => {
 });
 
 // Delete contact
-router.delete('/:id', async(req, res) => {
+router.delete('/:id', authenticateToken, async(req, res) => {
     try {
         const { id } = req.params;
 

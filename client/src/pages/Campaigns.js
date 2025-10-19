@@ -1,226 +1,282 @@
-import React, { useState } from "react";
-import { XMarkIcon } from "@heroicons/react/24/outline";
-import { useMutation, useQueryClient } from "react-query";
-import { campaignsAPI } from "../services/campaigns";
-import toast from "react-hot-toast";
-import LoadingSpinner from "./LoadingSpinner";
+import {
+  ChartBarIcon,
+  ClockIcon,
+  PhoneIcon,
+  PlayIcon,
+  PlusIcon,
+  StopIcon,
+  UserGroupIcon
+} from '@heroicons/react/24/outline';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import toast from 'react-hot-toast';
+import CreateCampaignModal from '../components/CreateCampaignModal';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { callsAPI } from '../services/calls';
+import campaignsAPI from '../services/campaigns';
 
-const CreateCampaignModal = ({ isOpen, onClose }) => {
-    const [formData, setFormData] = useState({
-        name: "",
-        type: "sales",
-        voice_persona: "professional",
-        auto_retry: true,
-        best_time_enabled: true,
-        emotion_detection: true,
+const Campaigns = () => {
+    const queryClient = useQueryClient();
+    const [showCreateModal, setShowCreateModal] = useState(false);
+
+    // Fetch campaigns
+    const { data: campaignsData, isLoading: campaignsLoading } = useQuery({
+        queryKey: ['campaigns'],
+        queryFn: () => campaignsAPI.getCampaigns(),
+        refetchInterval: 30000,
     });
 
-    const queryClient = useQueryClient();
+    // Fetch campaign stats
+    const { data: statsData } = useQuery({
+        queryKey: ['campaign-stats'],
+        queryFn: () => callsAPI.getCampaignStats(),
+        refetchInterval: 60000,
+    });
 
-    const createMutation = useMutation(
-        (data) => campaignsAPI.createCampaign(data), {
-            onSuccess: () => {
-                toast.success("Campaign created successfully!");
-                queryClient.invalidateQueries("campaigns");
-                onClose();
-                resetForm();
-            },
-            onError: (error) => {
-                toast.error(
-                    error ? .response ? .data ? .message || "Failed to create campaign"
-                );
-            },
-        }
-    );
 
-    const resetForm = () => {
-        setFormData({
-            name: "",
-            type: "sales",
-            voice_persona: "professional",
-            auto_retry: true,
-            best_time_enabled: true,
-            emotion_detection: true,
-        });
+    // Start automated calls mutation
+    const startAutomatedCallsMutation = useMutation({
+        mutationFn: (campaignId) => callsAPI.startAutomatedCalls(campaignId),
+        onSuccess: () => {
+            toast.success('Automated calls started successfully');
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+        },
+        onError: (error) => {
+            toast.error(error.response?.data?.message || 'Failed to start automated calls');
+        },
+    });
+
+    // Stop automated calls mutation
+    const stopAutomatedCallsMutation = useMutation({
+        mutationFn: (campaignId) => callsAPI.stopAutomatedCalls(campaignId),
+        onSuccess: () => {
+            toast.success('Automated calls stopped successfully');
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+        },
+        onError: (error) => {
+            toast.error(error.response?.data?.message || 'Failed to stop automated calls');
+        },
+    });
+
+
+    const handleStartAutomatedCalls = (campaignId) => {
+        startAutomatedCallsMutation.mutate(campaignId);
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-
-        if (!formData.name.trim()) {
-            toast.error("Campaign name is required");
-            return;
-        }
-
-        createMutation.mutate(formData);
+    const handleStopAutomatedCalls = (campaignId) => {
+        stopAutomatedCallsMutation.mutate(campaignId);
     };
 
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData((prev) => ({
-            ...prev,
-            [name]: type === "checkbox" ? checked : value,
-        }));
-    };
+    const campaigns = campaignsData?.campaigns || [];
+    const stats = statsData?.stats || {};
 
-    if (!isOpen) return null;
+    if (campaignsLoading) {
+        return (
+            <div className="flex justify-center items-center h-64">
+                <LoadingSpinner size="lg" />
+            </div>
+        );
+    }
 
-    return ( <
-        div className = "fixed inset-0 z-50 overflow-y-auto" >
-        <
-        div className = "flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0" > { /* Background overlay */ } <
-        div className = "fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
-        onClick = { onClose }
-        />
-
-        { /* Modal panel */ } <
-        div className = "inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full" > { /* Header */ } <
-        div className = "flex items-center justify-between px-6 py-4 border-b border-gray-200" >
-        <
-        h3 className = "text-lg font-semibold text-gray-900" >
-        Create New Campaign <
-        /h3> <
-        button onClick = { onClose }
-        className = "text-gray-400 hover:text-gray-500 transition-colors" >
-        <
-        XMarkIcon className = "h-6 w-6" / >
-        <
-        /button> < /
-        div >
-
-        { /* Form */ } <
-        form onSubmit = { handleSubmit } >
-        <
-        div className = "px-6 py-4 space-y-4" > { /* Campaign Name */ } <
-        div >
-        <
-        label className = "block text-sm font-medium text-gray-700 mb-1" >
-        Campaign Name < span className = "text-red-500" > * < /span> < /
-        label > <
-        input type = "text"
-        name = "name"
-        value = { formData.name }
-        onChange = { handleChange }
-        className = "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        placeholder = "e.g., Q4 Sales Outreach"
-        required /
-        >
-        <
-        /div>
-
-        { /* Campaign Type */ } <
-        div >
-        <
-        label className = "block text-sm font-medium text-gray-700 mb-1" >
-        Campaign Type < span className = "text-red-500" > * < /span> < /
-        label > <
-        select name = "type"
-        value = { formData.type }
-        onChange = { handleChange }
-        className = "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" >
-        <
-        option value = "sales" > Sales Outreach < /option> <
-        option value = "recruitment" > Recruitment Screening < /option> < /
-        select > <
-        /div>
-
-        { /* Voice Persona */ } <
-        div >
-        <
-        label className = "block text-sm font-medium text-gray-700 mb-1" >
-        Voice Persona <
-        /label> <
-        select name = "voice_persona"
-        value = { formData.voice_persona }
-        onChange = { handleChange }
-        className = "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" >
-        <
-        option value = "professional" > Professional < /option> <
-        option value = "casual" > Casual < /option> <
-        option value = "empathetic" > Empathetic < /option> <
-        option value = "enthusiastic" > Enthusiastic < /option> < /
-        select > <
-        /div>
-
-        { /* Feature Toggles */ } <
-        div className = "space-y-3 pt-2" >
-        <
-        div className = "flex items-center" >
-        <
-        input type = "checkbox"
-        name = "auto_retry"
-        checked = { formData.auto_retry }
-        onChange = { handleChange }
-        className = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /
-        >
-        <
-        label className = "ml-2 block text-sm text-gray-700" >
-        Enable Auto - Retry
-        for failed calls <
-        /label> < /
-        div >
-
-        <
-        div className = "flex items-center" >
-        <
-        input type = "checkbox"
-        name = "best_time_enabled"
-        checked = { formData.best_time_enabled }
-        onChange = { handleChange }
-        className = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /
-        >
-        <
-        label className = "ml-2 block text-sm text-gray-700" >
-        Enable Smart Timing(call at best times) <
-        /label> < /
-        div >
-
-        <
-        div className = "flex items-center" >
-        <
-        input type = "checkbox"
-        name = "emotion_detection"
-        checked = { formData.emotion_detection }
-        onChange = { handleChange }
-        className = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /
-        >
-        <
-        label className = "ml-2 block text-sm text-gray-700" >
-        Enable Emotion Detection <
-        /label> < /
-        div > <
-        /div> < /
-        div >
-
-        { /* Footer */ } <
-        div className = "px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end space-x-3" >
-        <
-        button type = "button"
-        onClick = { onClose }
-        className = "px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        disabled = { createMutation.isLoading } >
-        Cancel <
-        /button> <
-        button type = "submit"
-        className = "px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-        disabled = { createMutation.isLoading } > {
-            createMutation.isLoading ? ( <
+    return (
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
+                    <p className="text-gray-600">Manage your calling campaigns and automated call queues</p>
+                </div>
+                <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
                 >
-                <
-                LoadingSpinner size = "sm" / >
-                <
-                span className = "ml-2" > Creating... < /span> < / >
-            ) : (
-                "Create Campaign"
-            )
-        } <
-        /button> < /
-        div > <
-        /form> < /
-        div > <
-        /div> < /
-        div >
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Create Campaign
+                </button>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="p-5">
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0">
+                                <ChartBarIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                            <div className="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt className="text-sm font-medium text-gray-500 truncate">Total Campaigns</dt>
+                                    <dd className="text-lg font-medium text-gray-900">{stats.totalCampaigns || 0}</dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="p-5">
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0">
+                                <PhoneIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                            <div className="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt className="text-sm font-medium text-gray-500 truncate">Active Calls</dt>
+                                    <dd className="text-lg font-medium text-gray-900">{stats.activeCalls || 0}</dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="p-5">
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0">
+                                <UserGroupIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                            <div className="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt className="text-sm font-medium text-gray-500 truncate">Total Contacts</dt>
+                                    <dd className="text-lg font-medium text-gray-900">{stats.totalContacts || 0}</dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="p-5">
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0">
+                                <ClockIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                            <div className="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt className="text-sm font-medium text-gray-500 truncate">Queued Calls</dt>
+                                    <dd className="text-lg font-medium text-gray-900">{stats.queuedCalls || 0}</dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Campaigns Table */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                <div className="px-4 py-5 sm:p-6">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Your Campaigns</h3>
+                    {campaigns.length === 0 ? (
+                        <div className="text-center py-12">
+                            <ChartBarIcon className="mx-auto h-12 w-12 text-gray-400" />
+                            <h3 className="mt-2 text-sm font-medium text-gray-900">No campaigns</h3>
+                            <p className="mt-1 text-sm text-gray-500">Get started by creating a new campaign.</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Campaign
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Type
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Status
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Contacts
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Calls Made
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {campaigns.map((campaign) => (
+                                        <tr key={campaign.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div>
+                                                    <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
+                                                    <div className="text-sm text-gray-500">{campaign.description}</div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                    {campaign.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                                    campaign.status === 'active'
+                                                        ? 'bg-green-100 text-green-800'
+                                                        : campaign.status === 'paused'
+                                                        ? 'bg-yellow-100 text-yellow-800'
+                                                        : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    {campaign.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                {campaign.contactCount || 0}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                {campaign.callsMade || 0}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <div className="flex space-x-2">
+                                                    {campaign.automatedCallsActive ? (
+                                                        <button
+                                                            onClick={() => handleStopAutomatedCalls(campaign.id)}
+                                                            disabled={stopAutomatedCallsMutation.isLoading}
+                                                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400"
+                                                        >
+                                                            {stopAutomatedCallsMutation.isLoading ? (
+                                                                <LoadingSpinner size="sm" className="mr-1" />
+                                                            ) : (
+                                                                <StopIcon className="h-4 w-4 mr-1" />
+                                                            )}
+                                                            Stop
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleStartAutomatedCalls(campaign.id)}
+                                                            disabled={startAutomatedCallsMutation.isLoading || campaign.status !== 'active'}
+                                                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+                                                        >
+                                                            {startAutomatedCallsMutation.isLoading ? (
+                                                                <LoadingSpinner size="sm" className="mr-1" />
+                                                            ) : (
+                                                                <PlayIcon className="h-4 w-4 mr-1" />
+                                                            )}
+                                                            Start Queue
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Create Campaign Modal */}
+            <CreateCampaignModal
+                isOpen={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+            />
+        </div>
     );
 };
 
-export default CreateCampaignModal;
+export default Campaigns;

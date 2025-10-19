@@ -2,6 +2,7 @@ const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ const logConsentSchema = Joi.object({
 });
 
 // Get compliance metrics
-router.get('/metrics', async(req, res) => {
+router.get('/metrics', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { range = '7d' } = req.query;
 
@@ -107,7 +108,7 @@ router.get('/metrics', async(req, res) => {
 });
 
 // Get audit logs
-router.get('/audit-logs', async(req, res) => {
+router.get('/audit-logs', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { page = 1, limit = 50, eventType, startDate, endDate } = req.query;
         const offset = (page - 1) * limit;

@@ -1,0 +1,53 @@
+services:
+  # 🗄️ PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_dialer
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ai-dialer-net
+
+  # ⚡ Redis Cache
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ai-dialer-net
+    restart: always
+
+  # ☎️ Asterisk PBX Server
+  asterisk:
+    image: andrius/asterisk
+    container_name: asterisk
+    networks:
+      - ai-dialer-net
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "8088:8088"
+    volumes:
+      - ./asterisk-config:/etc/asterisk
+      - ./asterisk-logs:/var/log/asterisk
+      - ./audio-cache:/var/lib/asterisk/sounds/custom
+      - ./server/asterisk:/var/lib/asterisk/agi-bin
+    environment:
+      - ARI_PASSWORD=ai-dialer-password
+    restart: always
+
+networks:
+  ai-dialer-net:
+    driver: bridge
+
+volumes:
+  pg_data:
