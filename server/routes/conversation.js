@@ -92,62 +92,48 @@ router.post('/process', async(req, res) => {
             keywords.map(k => `%${k}%`)
         ]);
 
-        // Analyze user intent and emotion
-        const intentAnalysis = analyzeIntent(user_input, conversationHistory);
-        const emotionAnalysis = analyzeEmotion(user_input, context);
+        // Analyze user intent and emotion using enhanced engine
+        const intentAnalysis = conversationEngine.analyzeIntent(user_input, conversationHistory);
+        const emotionAnalysis = conversationEngine.analyzeEmotion(user_input, context);
 
-        // Determine response strategy
-        let response = {
-            success: true,
-            answer: "I don't have information about that topic. Let me connect you with a human representative.",
-            confidence: 0,
-            should_fallback: true,
-            intent: intentAnalysis.intent,
-            emotion: emotionAnalysis.emotion,
-            suggested_actions: [],
-            script_references: []
-        };
+        // Generate response using enhanced engine
+        let response = conversationEngine.generateResponse(intentAnalysis, emotionAnalysis, scripts, knowledgeResult.rows);
 
-        // Check for FAQ matches
+        // Check for FAQ matches and override if better match found
         if (knowledgeResult.rows.length > 0) {
             const bestMatch = knowledgeResult.rows[0];
-            response.answer = bestMatch.answer;
-            response.confidence = parseFloat(bestMatch.confidence);
-            response.should_fallback = parseFloat(bestMatch.confidence) < 0.7;
-            response.category = bestMatch.category;
+            const knowledgeConfidence = parseFloat(bestMatch.confidence);
+
+            // Use knowledge base answer if it has higher confidence
+            if (knowledgeConfidence > response.confidence) {
+                response.answer = bestMatch.answer;
+                response.confidence = knowledgeConfidence;
+                response.should_fallback = knowledgeConfidence < 0.7;
+                response.category = bestMatch.category;
+                response.source = 'knowledge_base';
+            }
         }
 
-        // Check for objection handling
+        // Add real-time objection handling suggestions
         if (intentAnalysis.isObjection) {
-            const objectionScript = scripts['objection_handling'];
-            if (objectionScript) {
-                response.answer = objectionScript.content;
-                response.confidence = 0.8;
-                response.should_fallback = false;
-                response.script_references.push('objection_handling');
-            }
+            response.objection_handling = {
+                type: intentAnalysis.objectionType,
+                suggested_responses: (intentAnalysis.handler && intentAnalysis.handler.responses) ? intentAnalysis.handler.responses : [],
+                follow_up_action: (intentAnalysis.handler && intentAnalysis.handler.followUp) ? intentAnalysis.handler.followUp : 'escalate'
+            };
         }
 
-        // Check for closing opportunities
-        if (intentAnalysis.isClosingOpportunity) {
-            const closingScript = scripts['closing'];
-            if (closingScript) {
-                response.answer = closingScript.content;
-                response.confidence = 0.9;
-                response.should_fallback = false;
-                response.script_references.push('closing');
-                response.suggested_actions.push('schedule_meeting');
-            }
+        // Add emotion-based actions
+        if (emotionAnalysis.action) {
+            response.emotion_action = emotionAnalysis.action;
         }
 
-        // Generate suggested actions based on context
-        if (intentAnalysis.intent === 'pricing_inquiry') {
-            response.suggested_actions.push('send_pricing_info');
-        } else if (intentAnalysis.intent === 'demo_request') {
-            response.suggested_actions.push('schedule_demo');
-        } else if (intentAnalysis.intent === 'competitor_mention') {
-            response.suggested_actions.push('competitive_analysis');
-        }
+        // Add conversation context
+        response.conversation_context = {
+            turn_count: conversationHistory.length + 1,
+            recent_topics: conversationHistory.slice(0, 3).map(turn => turn.intent || 'general'),
+            emotion_trend: conversationHistory.slice(0, 5).map(turn => turn.emotion || 'neutral')
+        };
 
         // Log conversation event
         await query(`
@@ -212,61 +198,244 @@ router.get('/history/:call_id', async(req, res) => {
     }
 });
 
-// Helper functions
-function analyzeIntent(userInput, conversationHistory) {
-    const input = userInput.toLowerCase();
-
-    // Objection patterns
-    const objectionPatterns = [
-        'too expensive', 'not interested', 'not right time', 'budget', 'cost',
-        'competitor', 'already have', 'not sure', 'think about it', 'call back'
-    ];
-
-    // Closing opportunity patterns
-    const closingPatterns = [
-        'sounds good', 'interested', 'tell me more', 'how much', 'when can',
-        'schedule', 'meeting', 'demo', 'trial', 'purchase'
-    ];
-
-    // Intent patterns
-    const intentPatterns = {
-        'pricing_inquiry': ['price', 'cost', 'how much', 'pricing', 'budget'],
-        'demo_request': ['demo', 'show me', 'trial', 'test', 'see it'],
-        'competitor_mention': ['competitor', 'alternative', 'other company', 'vs'],
-        'technical_question': ['how does', 'technical', 'integration', 'api'],
-        'timing_question': ['when', 'timeline', 'schedule', 'available']
-    };
-
-    let intent = 'general';
-    let isObjection = false;
-    let isClosingOpportunity = false;
-
-    // Check for objections
-    if (objectionPatterns.some(pattern => input.includes(pattern))) {
-        isObjection = true;
-        intent = 'objection';
+// Enhanced AI Conversation Engine
+class ConversationEngine {
+    constructor() {
+        this.objectionHandlers = new Map();
+        this.emotionDetectors = new Map();
+        this.intentClassifiers = new Map();
+        this.initializePatterns();
     }
 
-    // Check for closing opportunities
-    if (closingPatterns.some(pattern => input.includes(pattern))) {
-        isClosingOpportunity = true;
-        intent = 'closing_opportunity';
+    initializePatterns() {
+        // Enhanced objection patterns with context
+        this.objectionHandlers.set('price', {
+            patterns: ['too expensive', 'cost too much', 'budget', 'price', 'expensive', 'cheaper'],
+            responses: [
+                "I understand cost is important. Our solution actually saves companies 30% on average compared to competitors. Would you like to see a cost comparison?",
+                "Many of our clients initially thought the same, but they found the ROI pays for itself within 3 months. Can I show you how?",
+                "What budget range were you thinking? I can customize a solution that fits your needs."
+            ],
+            followUp: 'pricing_justification'
+        });
+
+        this.objectionHandlers.set('timing', {
+            patterns: ['not right time', 'busy', 'later', 'next quarter', 'not now'],
+            responses: [
+                "I completely understand. When would be a better time to discuss this? I can schedule a quick 15-minute call.",
+                "What's keeping you busy right now? Maybe our solution could help with that.",
+                "I respect your time. Would 5 minutes be okay to show you how this could save you time?"
+            ],
+            followUp: 'reschedule'
+        });
+
+        this.objectionHandlers.set('competitor', {
+            patterns: ['competitor', 'already have', 'using', 'alternative', 'other company'],
+            responses: [
+                "That's great! What do you like most about your current solution? I'd love to show you how we compare.",
+                "Many of our clients switched from [competitor]. What's your biggest challenge with them?",
+                "I'd love to show you a side-by-side comparison. What features are most important to you?"
+            ],
+            followUp: 'competitive_analysis'
+        });
+
+        // Enhanced emotion detection
+        this.emotionDetectors.set('interested', {
+            patterns: ['tell me more', 'interesting', 'how does', 'show me', 'demo', 'trial'],
+            confidence: 0.9,
+            action: 'provide_demo'
+        });
+
+        this.emotionDetectors.set('skeptical', {
+            patterns: ['not sure', 'doubt', 'sounds too good', 'really', 'prove it'],
+            confidence: 0.8,
+            action: 'provide_proof'
+        });
+
+        this.emotionDetectors.set('frustrated', {
+            patterns: ['frustrated', 'annoying', 'waste of time', 'stop calling'],
+            confidence: 0.9,
+            action: 'apologize_and_exit'
+        });
+
+        // Intent classification with confidence scoring
+        this.intentClassifiers.set('buying_signals', {
+            patterns: ['purchase', 'buy', 'order', 'sign up', 'get started', 'proceed'],
+            confidence: 0.95,
+            action: 'closing_sequence'
+        });
+
+        this.intentClassifiers.set('information_gathering', {
+            patterns: ['what', 'how', 'when', 'where', 'why', 'explain', 'details'],
+            confidence: 0.8,
+            action: 'provide_information'
+        });
     }
 
-    // Check for specific intents
-    for (const [intentType, patterns] of Object.entries(intentPatterns)) {
-        if (patterns.some(pattern => input.includes(pattern))) {
-            intent = intentType;
-            break;
+    analyzeIntent(userInput, conversationHistory) {
+        const input = userInput.toLowerCase();
+        let bestMatch = { intent: 'general', confidence: 0.3, isObjection: false, isClosingOpportunity: false };
+
+        // Check for objections first
+        for (const [objectionType, handler] of this.objectionHandlers) {
+            const matches = handler.patterns.filter(pattern => input.includes(pattern)).length;
+            if (matches > 0) {
+                bestMatch = {
+                    intent: 'objection',
+                    objectionType: objectionType,
+                    confidence: Math.min(0.95, 0.7 + (matches * 0.1)),
+                    isObjection: true,
+                    isClosingOpportunity: false,
+                    handler: handler
+                };
+                break;
+            }
         }
+
+        // Check for buying signals
+        for (const [intentType, classifier] of this.intentClassifiers) {
+            const matches = classifier.patterns.filter(pattern => input.includes(pattern)).length;
+            if (matches > 0 && classifier.confidence > bestMatch.confidence) {
+                bestMatch = {
+                    intent: intentType,
+                    confidence: classifier.confidence,
+                    isObjection: false,
+                    isClosingOpportunity: intentType === 'buying_signals',
+                    action: classifier.action
+                };
+            }
+        }
+
+        // Check conversation history for context
+        if (conversationHistory.length > 0) {
+            const recentContext = conversationHistory.slice(0, 3);
+            const contextBoost = this.analyzeContext(recentContext, input);
+            bestMatch.confidence = Math.min(0.95, bestMatch.confidence + contextBoost);
+        }
+
+        return bestMatch;
     }
 
-    return {
-        intent,
-        isObjection,
-        isClosingOpportunity,
-        confidence: 0.8
-    };
+    analyzeEmotion(userInput, context) {
+        const input = userInput.toLowerCase();
+        let bestMatch = { emotion: 'neutral', confidence: 0.5 };
+
+        for (const [emotionType, detector] of this.emotionDetectors) {
+            const matches = detector.patterns.filter(pattern => input.includes(pattern)).length;
+            if (matches > 0 && detector.confidence > bestMatch.confidence) {
+                bestMatch = {
+                    emotion: emotionType,
+                    confidence: detector.confidence,
+                    action: detector.action
+                };
+            }
+        }
+
+        // Analyze tone indicators
+        const toneIndicators = {
+            'excited': ['!', 'amazing', 'fantastic', 'love it'],
+            'concerned': ['worried', 'concerned', 'issue', 'problem'],
+            'confused': ['?', 'confused', 'unclear', 'don\'t understand']
+        };
+
+        for (const [tone, indicators] of Object.entries(toneIndicators)) {
+            if (indicators.some(indicator => input.includes(indicator))) {
+                bestMatch.tone = tone;
+                bestMatch.confidence = Math.min(0.95, bestMatch.confidence + 0.2);
+            }
+        }
+
+        return bestMatch;
+    }
+
+    analyzeContext(conversationHistory, currentInput) {
+        let contextBoost = 0;
+
+        // Check for repeated topics
+        const topics = conversationHistory.map(turn => (turn.user_input || '').toLowerCase());
+        const currentTopics = currentInput.toLowerCase().split(' ');
+
+        const topicOverlap = currentTopics.filter(topic =>
+            topics.some(history => history.includes(topic))
+        ).length;
+
+        if (topicOverlap > 0) {
+            contextBoost += topicOverlap * 0.1;
+        }
+
+        // Check for escalation patterns
+        const recentEmotions = conversationHistory.map(turn => turn.emotion || 'neutral');
+        if (recentEmotions.includes('frustrated') || recentEmotions.includes('negative')) {
+            contextBoost += 0.2;
+        }
+
+        return Math.min(0.3, contextBoost);
+    }
+
+    generateResponse(intentAnalysis, emotionAnalysis, scripts, knowledgeBase) {
+        let response = {
+            success: true,
+            answer: "I understand. Let me connect you with a human representative who can better assist you.",
+            confidence: 0.3,
+            should_fallback: true,
+            intent: intentAnalysis.intent,
+            emotion: emotionAnalysis.emotion,
+            suggested_actions: [],
+            script_references: [],
+            objection_type: intentAnalysis.objectionType
+        };
+
+        // Handle objections with specific responses
+        if (intentAnalysis.isObjection && intentAnalysis.handler) {
+            const handler = intentAnalysis.handler;
+            response.answer = handler.responses[Math.floor(Math.random() * handler.responses.length)];
+            response.confidence = intentAnalysis.confidence;
+            response.should_fallback = false;
+            response.suggested_actions.push(handler.followUp);
+            response.script_references.push('objection_handling');
+        }
+
+        // Handle buying signals
+        if (intentAnalysis.isClosingOpportunity) {
+            response.answer = "That's great! I'd love to get you set up. What's the best way to move forward?";
+            response.confidence = 0.9;
+            response.should_fallback = false;
+            response.suggested_actions.push('schedule_meeting', 'send_proposal');
+            response.script_references.push('closing');
+        }
+
+        // Handle specific emotions
+        if (emotionAnalysis.action) {
+            switch (emotionAnalysis.action) {
+                case 'provide_demo':
+                    response.answer = "I'd be happy to show you a quick demo. What would you like to see first?";
+                    response.confidence = 0.8;
+                    response.suggested_actions.push('schedule_demo');
+                    break;
+                case 'provide_proof':
+                    response.answer = "I can provide case studies and testimonials from similar companies. Would that help?";
+                    response.confidence = 0.7;
+                    response.suggested_actions.push('send_case_studies');
+                    break;
+                case 'apologize_and_exit':
+                    response.answer = "I apologize for any inconvenience. I'll remove you from our calling list. Have a great day!";
+                    response.confidence = 0.95;
+                    response.should_fallback = true;
+                    response.suggested_actions.push('add_to_dnc');
+                    break;
+            }
+        }
+
+        return response;
+    }
+}
+
+// Initialize conversation engine
+const conversationEngine = new ConversationEngine();
+
+// Helper functions (keeping original for backward compatibility)
+function analyzeIntent(userInput, conversationHistory) {
+    return conversationEngine.analyzeIntent(userInput, conversationHistory);
 }
 
 function analyzeEmotion(userInput, context) {

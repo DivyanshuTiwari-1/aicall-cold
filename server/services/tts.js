@@ -1,14 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
-const axios = require('axios');
 const logger = require('../utils/logger');
 
 class TTSService {
     constructor() {
-        this.engine = process.env.TTS_ENGINE || 'google';
+        this.engine = process.env.TTS_ENGINE || 'espeak';
         this.language = process.env.TTS_LANGUAGE || 'en-US';
-        this.voice = process.env.TTS_VOICE || 'en-US-Wavenet-D';
+        this.voice = process.env.TTS_VOICE || 'en-us';
         this.cacheDir = path.join(__dirname, '../../cache/tts');
         this.audioDir = path.join(__dirname, '../../audio/tts');
 
@@ -19,37 +18,15 @@ class TTSService {
             }
         });
 
-        // Voice configurations for different providers
+        // Voice configurations for eSpeak only (cost optimization)
         this.voices = {
-            google: {
-                'en-US-Wavenet-A': { gender: 'MALE', language: 'en-US' },
-                'en-US-Wavenet-B': { gender: 'MALE', language: 'en-US' },
-                'en-US-Wavenet-C': { gender: 'FEMALE', language: 'en-US' },
-                'en-US-Wavenet-D': { gender: 'MALE', language: 'en-US' },
-                'en-US-Wavenet-E': { gender: 'FEMALE', language: 'en-US' },
-                'en-US-Wavenet-F': { gender: 'FEMALE', language: 'en-US' },
-                'en-US-Standard-A': { gender: 'MALE', language: 'en-US' },
-                'en-US-Standard-B': { gender: 'MALE', language: 'en-US' },
-                'en-US-Standard-C': { gender: 'FEMALE', language: 'en-US' },
-                'en-US-Standard-D': { gender: 'MALE', language: 'en-US' },
-                'en-US-Standard-E': { gender: 'FEMALE', language: 'en-US' },
-                'en-US-Standard-F': { gender: 'FEMALE', language: 'en-US' }
-            },
-            azure: {
-                'en-US-AriaNeural': { gender: 'Female', language: 'en-US' },
-                'en-US-DavisNeural': { gender: 'Male', language: 'en-US' },
-                'en-US-GuyNeural': { gender: 'Male', language: 'en-US' },
-                'en-US-JennyNeural': { gender: 'Female', language: 'en-US' },
-                'en-US-JasonNeural': { gender: 'Male', language: 'en-US' },
-                'en-US-NancyNeural': { gender: 'Female', language: 'en-US' }
-            },
-            aws: {
-                'Joanna': { gender: 'Female', language: 'en-US' },
-                'Matthew': { gender: 'Male', language: 'en-US' },
-                'Amy': { gender: 'Female', language: 'en-GB' },
-                'Brian': { gender: 'Male', language: 'en-GB' },
-                'Emma': { gender: 'Female', language: 'en-GB' },
-                'Joey': { gender: 'Male', language: 'en-US' }
+            espeak: {
+                'en-us': { gender: 'MALE', language: 'en-US' },
+                'en-us+f3': { gender: 'FEMALE', language: 'en-US' },
+                'en-us+m1': { gender: 'MALE', language: 'en-US' },
+                'en-us+m2': { gender: 'MALE', language: 'en-US' },
+                'en-us+f1': { gender: 'FEMALE', language: 'en-US' },
+                'en-us+f2': { gender: 'FEMALE', language: 'en-US' }
             }
         };
     }
@@ -95,20 +72,8 @@ class TTSService {
         const { voice, speed, pitch, volume, outputFile } = options;
 
         try {
-            switch (this.engine) {
-                case 'google':
-                    return await this.generateGoogleTTS(text, voice, outputFile);
-
-                case 'azure':
-                    return await this.generateAzureTTS(text, voice, outputFile);
-
-                case 'aws':
-                    return await this.generateAWSTTS(text, voice, outputFile);
-
-                case 'espeak':
-                default:
-                    return await this.generateEspeakTTS(text, voice, speed, pitch, volume, outputFile);
-            }
+            // Only use eSpeak for cost optimization
+            return await this.generateEspeakTTS(text, voice, speed, pitch, volume, outputFile);
         } catch (error) {
             logger.error('TTS generation error:', error);
             // Fallback to espeak if other engines fail
@@ -122,12 +87,28 @@ class TTSService {
 
     async generateEspeakTTS(text, voice, speed, pitch, volume, outputFile) {
         return new Promise((resolve, reject) => {
-            const command = `espeak -s ${speed} -p ${pitch} -a ${volume} -v ${voice} "${text}" -w "${outputFile}"`;
+            // Use espeak with optimized parameters for better quality
+            const command = `espeak -s ${speed} -p ${pitch} -a ${volume} -v ${voice} "${text}" -w "${outputFile}" --stdout | sox -t wav - -r 16000 -c 1 "${outputFile}"`;
 
             exec(command, (error, stdout, stderr) => {
                 if (error) {
-                    logger.error('Espeak TTS error:', error);
-                    reject(error);
+                    // Fallback to basic espeak command if sox is not available
+                    const fallbackCommand = `espeak -s ${speed} -p ${pitch} -a ${volume} -v ${voice} "${text}" -w "${outputFile}"`;
+
+                    exec(fallbackCommand, (fallbackError, fallbackStdout, fallbackStderr) => {
+                        if (fallbackError) {
+                            logger.error('Espeak TTS error:', fallbackError);
+                            reject(fallbackError);
+                            return;
+                        }
+
+                        if (fs.existsSync(outputFile)) {
+                            logger.info(`Espeak TTS: Generated audio for voice ${voice}`);
+                            resolve(outputFile);
+                        } else {
+                            reject(new Error('Espeak TTS audio file was not created'));
+                        }
+                    });
                     return;
                 }
 
@@ -141,142 +122,7 @@ class TTSService {
         });
     }
 
-    async generateGoogleTTS(text, voice, outputFile) {
-        const apiKey = process.env.GOOGLE_TTS_API_KEY;
-        if (!apiKey) {
-            throw new Error('GOOGLE_TTS_API_KEY not configured');
-        }
-
-        const voiceConfig = this.voices.google[voice] || this.voices.google['en-US-Wavenet-D'];
-        const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
-
-        const requestBody = {
-            input: { text: text },
-            voice: {
-                languageCode: voiceConfig.language,
-                name: voice,
-                ssmlGender: voiceConfig.gender
-            },
-            audioConfig: {
-                audioEncoding: 'LINEAR16',
-                sampleRateHertz: 16000,
-                speakingRate: 1.0,
-                pitch: 0.0,
-                volumeGainDb: 0.0
-            }
-        };
-
-        try {
-            const response = await axios.post(url, requestBody, {
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            });
-
-            const audioContent = response.data.audioContent;
-            const audioBuffer = Buffer.from(audioContent, 'base64');
-            fs.writeFileSync(outputFile, audioBuffer);
-
-            logger.info(`Google TTS: Generated audio for voice ${voice}`);
-            return outputFile;
-        } catch (error) {
-            logger.error('Google TTS error:', error.response ? .data || error.message);
-            throw error;
-        }
-    }
-
-    async generateAzureTTS(text, voice, outputFile) {
-        const apiKey = process.env.AZURE_TTS_API_KEY;
-        const region = process.env.AZURE_TTS_REGION;
-
-        if (!apiKey || !region) {
-            throw new Error('AZURE_TTS_API_KEY and AZURE_TTS_REGION not configured');
-        }
-
-        const voiceConfig = this.voices.azure[voice] || this.voices.azure['en-US-AriaNeural'];
-        const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-
-        const ssml = `
-            <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${voiceConfig.language}'>
-                <voice name='${voice}'>
-                    <prosody rate='1.0' pitch='0%' volume='100%'>
-                        ${text}
-                    </prosody>
-                </voice>
-            </speak>
-        `;
-
-        try {
-            const response = await axios.post(url, ssml, {
-                headers: {
-                    'Ocp-Apim-Subscription-Key': apiKey,
-                    'Content-Type': 'application/ssml+xml',
-                    'X-Microsoft-OutputFormat': 'riff-16khz-16bit-mono-pcm'
-                },
-                timeout: 30000,
-                responseType: 'arraybuffer'
-            });
-
-            fs.writeFileSync(outputFile, response.data);
-            logger.info(`Azure TTS: Generated audio for voice ${voice}`);
-            return outputFile;
-        } catch (error) {
-            logger.error('Azure TTS error:', error.response ? .data || error.message);
-            throw error;
-        }
-    }
-
-    async generateAWSTTS(text, voice, outputFile) {
-        const AWS = require('aws-sdk');
-        const polly = new AWS.Polly({
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-            region: process.env.AWS_REGION || 'us-east-1'
-        });
-
-        const voiceConfig = this.voices.aws[voice] || this.voices.aws['Joanna'];
-
-        const params = {
-            Text: text,
-            OutputFormat: 'pcm',
-            VoiceId: voice,
-            LanguageCode: voiceConfig.language,
-            SampleRate: '16000',
-            TextType: 'text'
-        };
-
-        try {
-            const result = await polly.synthesizeSpeech(params).promise();
-            fs.writeFileSync(outputFile, result.AudioStream);
-            logger.info(`AWS Polly: Generated audio for voice ${voice}`);
-            return outputFile;
-        } catch (error) {
-            logger.error('AWS Polly error:', error.message);
-            throw error;
-        }
-    }
-
-    generateAzureTTSCommand(text, voice, outputFile) {
-        const apiKey = process.env.AZURE_TTS_API_KEY;
-        const region = process.env.AZURE_TTS_REGION;
-
-        if (!apiKey || !region) {
-            throw new Error('AZURE_TTS_API_KEY and AZURE_TTS_REGION not configured');
-        }
-
-        const ssml = `
-            <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${this.language}'>
-                <voice name='${voice}'>
-                    ${text}
-                </voice>
-            </speak>
-        `;
-
-        const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-
-        return `curl -X POST "${url}" -H "Ocp-Apim-Subscription-Key: ${apiKey}" -H "Content-Type: application/ssml+xml" -H "X-Microsoft-OutputFormat: riff-16khz-16bit-mono-pcm" --data-raw '${ssml}' -o "${outputFile}"`;
-    }
+    // All external TTS APIs removed for cost optimization - using eSpeak only
 
     createCacheKey(text, voice, speed, pitch, volume) {
         const crypto = require('crypto');

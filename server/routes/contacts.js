@@ -232,6 +232,97 @@ router.post('/bulk', async(req, res) => {
     }
 });
 
+// Import contacts (alias for bulk)
+router.post('/import', async(req, res) => {
+    try {
+        const { error, value } = bulkContactSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.details.map(d => d.message)
+            });
+        }
+
+        const { campaign_id, contacts } = value;
+
+        // Verify campaign belongs to organization
+        const campaignCheck = await query(
+            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2', [campaign_id, req.organizationId]
+        );
+
+        if (campaignCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        const results = {
+            created: 0,
+            skipped: 0,
+            errors: []
+        };
+
+        // Process contacts in batches
+        for (const contactData of contacts) {
+            try {
+                // Check if contact already exists
+                const existingContact = await query(
+                    'SELECT id FROM contacts WHERE campaign_id = $1 AND phone = $2', [campaign_id, contactData.phone]
+                );
+
+                if (existingContact.rows.length > 0) {
+                    results.skipped++;
+                    continue;
+                }
+
+                await query(`
+          INSERT INTO contacts (
+            organization_id, campaign_id, first_name, last_name, phone, email,
+            company, title, industry, location, custom_fields
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+                    req.organizationId,
+                    campaign_id,
+                    contactData.first_name,
+                    contactData.last_name,
+                    contactData.phone,
+                    contactData.email,
+                    contactData.company,
+                    contactData.title,
+                    contactData.industry,
+                    contactData.location,
+                    JSON.stringify(contactData.custom_fields || {})
+                ]);
+
+                results.created++;
+            } catch (error) {
+                results.errors.push({
+                    contact: contactData,
+                    error: error.message
+                });
+            }
+        }
+
+        logger.info(`Bulk contact import: ${results.created} created, ${results.skipped} skipped, ${results.errors.length} errors`);
+
+        res.json({
+            success: true,
+            message: 'Bulk import completed',
+            results
+        });
+
+    } catch (error) {
+        logger.error('Bulk contact import error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process bulk import'
+        });
+    }
+});
+
 // Get contacts
 router.get('/', async(req, res) => {
     try {

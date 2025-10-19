@@ -6,38 +6,236 @@ const logger = require('../utils/logger');
 const router = express.Router();
 
 // Validation schemas
-const dncSchema = Joi.object({
+const addDNCSchema = Joi.object({
     phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
-    reason: Joi.string().max(255).optional()
+    reason: Joi.string().valid('user_request', 'opt_out', 'complaint', 'invalid_number', 'other').required(),
+    source: Joi.string().valid('manual', 'user_request', 'api', 'import').default('manual')
 });
 
-// Check if phone is on DNC list
-router.post('/check', async(req, res) => {
-    try {
-        const { phone } = req.body;
+const bulkAddDNCSchema = Joi.object({
+    phones: Joi.array().items(Joi.string().pattern(/^\+?[1-9]\d{1,14}$/)).min(1).max(1000).required()
+});
 
-        if (!phone) {
-            return res.status(400).json({
-                success: false,
-                message: 'Phone number is required'
-            });
+// Get DNC records
+router.get('/records', async(req, res) => {
+    try {
+        const { page = 1, limit = 50, source, search } = req.query;
+        const offset = (page - 1) * limit;
+
+        let whereClause = 'WHERE organization_id = $1';
+        const params = [req.organizationId];
+        let paramCount = 1;
+
+        if (source) {
+            paramCount++;
+            whereClause += ` AND source = $${paramCount}`;
+            params.push(source);
         }
 
-        const result = await query(
-            'SELECT id, reason, created_at FROM dnc_registry WHERE organization_id = $1 AND phone = $2', [req.organizationId, phone]
-        );
+        if (search) {
+            paramCount++;
+            whereClause += ` AND phone ILIKE $${paramCount}`;
+            params.push(`%${search}%`);
+        }
 
-        const isOnDNC = result.rows.length > 0;
+        // Get total count
+        const countResult = await query(`
+            SELECT COUNT(*) as total
+            FROM dnc_registry
+            ${whereClause}
+        `, params);
+
+        // Get records
+        const result = await query(`
+            SELECT id, phone, reason, source, added_date, added_by
+            FROM dnc_registry
+            ${whereClause}
+            ORDER BY added_date DESC
+            LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+        `, [...params, parseInt(limit), parseInt(offset)]);
+
+        const records = result.rows.map(record => ({
+            id: record.id,
+            phone: record.phone,
+            reason: record.reason,
+            source: record.source,
+            addedDate: record.added_date,
+            addedBy: record.added_by
+        }));
 
         res.json({
             success: true,
-            isOnDNC,
-            dncRecord: isOnDNC ? {
-                id: result.rows[0].id,
-                reason: result.rows[0].reason,
-                addedAt: result.rows[0].created_at
-            } : null
+            records,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: parseInt(countResult.rows[0].total),
+                pages: Math.ceil(countResult.rows[0].total / limit)
+            }
         });
+
+    } catch (error) {
+        logger.error('DNC records fetch error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DNC records'
+        });
+    }
+});
+
+// Add to DNC
+router.post('/add', async(req, res) => {
+    try {
+        const { error, value } = addDNCSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.details.map(d => d.message)
+            });
+        }
+
+        const { phone, reason, source } = value;
+
+        // Check if already exists
+        const existing = await query(
+            'SELECT id FROM dnc_registry WHERE organization_id = $1 AND phone = $2', [req.organizationId, phone]
+        );
+
+        if (existing.rows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Phone number already exists in DNC list'
+            });
+        }
+
+        // Add to DNC
+        const result = await query(`
+            INSERT INTO dnc_registry (organization_id, phone, reason, source, added_by)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+        `, [req.organizationId, phone, reason, source, req.user.id]);
+
+        const dncRecord = result.rows[0];
+
+        // Log audit event
+        await query(`
+            INSERT INTO compliance_audit_logs (organization_id, event_type, event_data, user_id)
+            VALUES ($1, $2, $3, $4)
+        `, [
+            req.organizationId,
+            'dnc_added',
+            JSON.stringify({
+                phone: phone,
+                reason: reason,
+                source: source
+            }),
+            req.user.id
+        ]);
+
+        logger.info(`DNC entry added: ${phone} by user ${req.user.id}`);
+
+        res.status(201).json({
+            success: true,
+            message: 'Number added to DNC list successfully',
+            record: {
+                id: dncRecord.id,
+                phone: dncRecord.phone,
+                reason: dncRecord.reason,
+                source: dncRecord.source,
+                addedDate: dncRecord.added_date
+            }
+        });
+
+    } catch (error) {
+        logger.error('DNC add error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add to DNC list'
+        });
+    }
+});
+
+// Remove from DNC
+router.delete('/remove/:id', async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check if record exists
+        const existing = await query(
+            'SELECT phone FROM dnc_registry WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
+        );
+
+        if (existing.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'DNC record not found'
+            });
+        }
+
+        const phone = existing.rows[0].phone;
+
+        // Remove from DNC
+        await query(
+            'DELETE FROM dnc_registry WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
+        );
+
+        // Log audit event
+        await query(`
+            INSERT INTO compliance_audit_logs (organization_id, event_type, event_data, user_id)
+            VALUES ($1, $2, $3, $4)
+        `, [
+            req.organizationId,
+            'dnc_removed',
+            JSON.stringify({
+                phone: phone,
+                removed_by: req.user.id
+            }),
+            req.user.id
+        ]);
+
+        logger.info(`DNC entry removed: ${phone} by user ${req.user.id}`);
+
+        res.json({
+            success: true,
+            message: 'Number removed from DNC list successfully'
+        });
+
+    } catch (error) {
+        logger.error('DNC remove error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to remove from DNC list'
+        });
+    }
+});
+
+// Check DNC status
+router.get('/check/:phone', async(req, res) => {
+    try {
+        const { phone } = req.params;
+
+        const result = await query(
+            'SELECT id, reason, source, added_date FROM dnc_registry WHERE organization_id = $1 AND phone = $2', [req.organizationId, phone]
+        );
+
+        if (result.rows.length > 0) {
+            res.json({
+                success: true,
+                isDNC: true,
+                record: {
+                    id: result.rows[0].id,
+                    reason: result.rows[0].reason,
+                    source: result.rows[0].source,
+                    addedDate: result.rows[0].added_date
+                }
+            });
+        } else {
+            res.json({
+                success: true,
+                isDNC: false
+            });
+        }
 
     } catch (error) {
         logger.error('DNC check error:', error);
@@ -48,10 +246,10 @@ router.post('/check', async(req, res) => {
     }
 });
 
-// Add phone to DNC list
-router.post('/add', async(req, res) => {
+// Bulk add to DNC
+router.post('/bulk-add', async(req, res) => {
     try {
-        const { error, value } = dncSchema.validate(req.body);
+        const { error, value } = bulkAddDNCSchema.validate(req.body);
         if (error) {
             return res.status(400).json({
                 success: false,
@@ -60,129 +258,104 @@ router.post('/add', async(req, res) => {
             });
         }
 
-        const { phone, reason } = value;
+        const { phones } = value;
+        const added = [];
+        const skipped = [];
 
-        // Check if already on DNC list
-        const existingDNC = await query(
-            'SELECT id FROM dnc_registry WHERE organization_id = $1 AND phone = $2', [req.organizationId, phone]
-        );
+        for (const phone of phones) {
+            // Check if already exists
+            const existing = await query(
+                'SELECT id FROM dnc_registry WHERE organization_id = $1 AND phone = $2', [req.organizationId, phone]
+            );
 
-        if (existingDNC.rows.length > 0) {
-            return res.status(409).json({
-                success: false,
-                message: 'Phone number already on DNC list'
-            });
+            if (existing.rows.length === 0) {
+                // Add to DNC
+                const result = await query(`
+                    INSERT INTO dnc_registry (organization_id, phone, reason, source, added_by)
+                    VALUES ($1, $2, $3, $4, $5)
+                    RETURNING id
+                `, [req.organizationId, phone, 'bulk_import', 'api', req.user.id]);
+
+                added.push(phone);
+            } else {
+                skipped.push(phone);
+            }
         }
 
-        const result = await query(`
-      INSERT INTO dnc_registry (organization_id, phone, reason, source)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `, [req.organizationId, phone, reason, 'manual']);
+        // Log audit event
+        await query(`
+            INSERT INTO compliance_audit_logs (organization_id, event_type, event_data, user_id)
+            VALUES ($1, $2, $3, $4)
+        `, [
+            req.organizationId,
+            'dnc_bulk_added',
+            JSON.stringify({
+                total: phones.length,
+                added: added.length,
+                skipped: skipped.length
+            }),
+            req.user.id
+        ]);
 
-        const dncRecord = result.rows[0];
+        logger.info(`DNC bulk add: ${added.length} added, ${skipped.length} skipped by user ${req.user.id}`);
 
-        logger.info(`Phone added to DNC: ${phone} by user ${req.user.id}`);
-
-        res.status(201).json({
+        res.json({
             success: true,
-            message: 'Phone number added to DNC list',
-            dncRecord: {
-                id: dncRecord.id,
-                phone: dncRecord.phone,
-                reason: dncRecord.reason,
-                source: dncRecord.source,
-                createdAt: dncRecord.created_at
+            message: `Bulk DNC operation completed`,
+            results: {
+                total: phones.length,
+                added: added.length,
+                skipped: skipped.length,
+                addedPhones: added,
+                skippedPhones: skipped
             }
         });
 
     } catch (error) {
-        logger.error('DNC add error:', error);
+        logger.error('DNC bulk add error:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to add phone to DNC list'
+            message: 'Failed to bulk add to DNC list'
         });
     }
 });
 
-// Get DNC list
-router.get('/', async(req, res) => {
+// Get DNC statistics
+router.get('/stats', async(req, res) => {
     try {
-        const { limit = 50, offset = 0, search } = req.query;
-
-        let whereClause = 'WHERE organization_id = $1';
-        const params = [req.organizationId];
-        let paramCount = 1;
-
-        if (search) {
-            paramCount++;
-            whereClause += ` AND phone ILIKE $${paramCount}`;
-            params.push(`%${search}%`);
-        }
-
         const result = await query(`
-      SELECT *
-      FROM dnc_registry
-      ${whereClause}
-      ORDER BY created_at DESC
-      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-    `, [...params, parseInt(limit), parseInt(offset)]);
+            SELECT
+                COUNT(*) as total,
+                COUNT(CASE WHEN source = 'manual' THEN 1 END) as manual,
+                COUNT(CASE WHEN source = 'user_request' THEN 1 END) as user_request,
+                COUNT(CASE WHEN source = 'api' THEN 1 END) as api,
+                COUNT(CASE WHEN source = 'import' THEN 1 END) as imported,
+                COUNT(CASE WHEN added_date >= CURRENT_DATE THEN 1 END) as added_today,
+                COUNT(CASE WHEN added_date >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as added_this_week
+            FROM dnc_registry
+            WHERE organization_id = $1
+        `, [req.organizationId]);
 
-        const dncRecords = result.rows.map(record => ({
-            id: record.id,
-            phone: record.phone,
-            reason: record.reason,
-            source: record.source,
-            createdAt: record.created_at
-        }));
+        const stats = result.rows[0];
 
         res.json({
             success: true,
-            dncRecords,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                total: dncRecords.length
+            stats: {
+                total: parseInt(stats.total),
+                manual: parseInt(stats.manual),
+                userRequest: parseInt(stats.user_request),
+                api: parseInt(stats.api),
+                imported: parseInt(stats.imported),
+                addedToday: parseInt(stats.added_today),
+                addedThisWeek: parseInt(stats.added_this_week)
             }
         });
 
     } catch (error) {
-        logger.error('DNC list fetch error:', error);
+        logger.error('DNC stats error:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to fetch DNC list'
-        });
-    }
-});
-
-// Remove phone from DNC list
-router.delete('/:id', async(req, res) => {
-    try {
-        const { id } = req.params;
-
-        const result = await query(
-            'DELETE FROM dnc_registry WHERE id = $1 AND organization_id = $2 RETURNING phone', [id, req.organizationId]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'DNC record not found'
-            });
-        }
-
-        logger.info(`Phone removed from DNC: ${result.rows[0].phone} by user ${req.user.id}`);
-
-        res.json({
-            success: true,
-            message: 'Phone number removed from DNC list'
-        });
-
-    } catch (error) {
-        logger.error('DNC removal error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to remove phone from DNC list'
+            message: 'Failed to fetch DNC statistics'
         });
     }
 });

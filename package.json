@@ -5,6 +5,9 @@
     "main": "server/index.js",
     "scripts": {
         "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+        "dev:docker": "docker-compose -f docker-compose.dev.yml up --build",
+        "dev:docker:down": "docker-compose -f docker-compose.dev.yml down",
+        "dev:docker:logs": "docker-compose -f docker-compose.dev.yml logs -f",
         "server:dev": "cd server && npm run dev",
         "client:dev": "cd client && npm start",
         "build": "cd client && npm run build",
@@ -27,6 +30,7 @@
         "concurrently": "^8.2.2"
     },
     "dependencies": {
-        "axios": "^1.12.2"
+        "axios": "^1.12.2",
+        "multer": "^2.0.2"
     }
 }

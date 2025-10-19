@@ -1,0 +1,22 @@
+# Development Dockerfile for React app with hot reloading
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 3001
+
+# Start development server with hot reloading
+# Set HOST=0.0.0.0 to make the dev server accessible from outside the container
+ENV HOST=0.0.0.0
+CMD ["npm", "start"]
+

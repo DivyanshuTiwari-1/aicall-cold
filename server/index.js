@@ -12,10 +12,13 @@ const contactRoutes = require('./routes/contacts');
 const callRoutes = require('./routes/calls');
 const analyticsRoutes = require('./routes/analytics');
 const dncRoutes = require('./routes/dnc');
+const complianceRoutes = require('./routes/compliance');
+const costOptimizationRoutes = require('./routes/cost-optimization');
 const knowledgeRoutes = require('./routes/knowledge');
 const mlRoutes = require('./routes/ml');
 const scriptRoutes = require('./routes/scripts');
 const conversationRoutes = require('./routes/conversation');
+const asteriskRoutes = require('./routes/asterisk');
 // Initialize telephony provider early
 require('./services/telephony');
 
@@ -33,8 +36,12 @@ const wss = new WebSocketServer({ server });
 
 // Middleware
 app.use(helmet());
+// CORS configuration
+const corsOrigins = process.env.CORS_ORIGIN ?
+    process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()) : ['http://localhost:3001', 'http://localhost:3000'];
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? ['https://yourdomain.com'] : ['http://localhost:3001', 'http://localhost:3000'],
+    origin: process.env.NODE_ENV === 'production' ? corsOrigins : corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -67,10 +74,13 @@ app.use('/api/v1/contacts', authenticateToken, contactRoutes);
 app.use('/api/v1/calls', authenticateToken, callRoutes);
 app.use('/api/v1/analytics', authenticateToken, analyticsRoutes);
 app.use('/api/v1/dnc', authenticateToken, dncRoutes);
+app.use('/api/v1/compliance', authenticateToken, complianceRoutes);
+app.use('/api/v1/cost-optimization', authenticateToken, costOptimizationRoutes);
 app.use('/api/v1/knowledge', authenticateToken, knowledgeRoutes);
 app.use('/api/v1/ml', authenticateToken, mlRoutes);
 app.use('/api/v1/scripts', authenticateToken, scriptRoutes);
 app.use('/api/v1/conversation', authenticateToken, conversationRoutes);
+app.use('/api/v1/asterisk', asteriskRoutes); // No auth required for AGI scripts
 
 // WebSocket connection handling
 wss.on('connection', (ws, req) => {

@@ -31,17 +31,15 @@ export const contactsAPI = {
         return response.data;
     },
 
-    // Bulk create contacts
-    bulkCreateContacts: async(contactsData) => {
-        const response = await api.post('/contacts/bulk', contactsData);
+    // Bulk import contacts
+    importContacts: async(contactsData) => {
+        const response = await api.post('/contacts/import', contactsData);
         return response.data;
     },
 
-    // Get contacts by campaign
-    getContactsByCampaign: async(campaignId, params = {}) => {
-        const response = await api.get(`/contacts`, {
-            params: { campaign_id: campaignId, ...params }
-        });
+    // Add to DNC list
+    addToDNC: async(phoneData) => {
+        const response = await api.post('/contacts/dnc', phoneData);
         return response.data;
     }
 };

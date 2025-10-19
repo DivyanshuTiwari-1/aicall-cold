@@ -64,6 +64,5 @@
         "eslint-plugin-react-hooks": "^6.1.1",
         "globals": "^16.4.0",
         "prettier": "^3.6.2"
-    },
-    "proxy": "http://localhost:3000"
+    }
 }

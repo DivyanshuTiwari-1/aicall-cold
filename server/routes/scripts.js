@@ -405,4 +405,77 @@ router.post('/conversation', async(req, res) => {
     }
 });
 
+// Get script for AI conversation (used by AGI scripts)
+router.get('/conversation', async(req, res) => {
+    try {
+        const { call_id, conversation_type = 'main_pitch' } = req.query;
+
+        if (!call_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Call ID is required'
+            });
+        }
+
+        // Get call details
+        const callResult = await query(`
+            SELECT c.*, camp.name as campaign_name, camp.script_id
+            FROM calls c
+            LEFT JOIN campaigns camp ON c.campaign_id = camp.id
+            WHERE c.id = $1 AND c.organization_id = $2
+        `, [call_id, req.organizationId]);
+
+        if (callResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Call not found'
+            });
+        }
+
+        const call = callResult.rows[0];
+        let script = null;
+
+        // Get script based on conversation type
+        if (call.script_id) {
+            const scriptResult = await query(`
+                SELECT * FROM scripts
+                WHERE id = $1 AND organization_id = $2 AND is_active = true
+            `, [call.script_id, req.organizationId]);
+
+            if (scriptResult.rows.length > 0) {
+                script = scriptResult.rows[0];
+            }
+        }
+
+        // If no specific script, get default script by type
+        if (!script) {
+            const defaultScriptResult = await query(`
+                SELECT * FROM scripts
+                WHERE type = $1 AND organization_id = $2 AND is_active = true
+                ORDER BY created_at DESC
+                LIMIT 1
+            `, [conversation_type, req.organizationId]);
+
+            if (defaultScriptResult.rows.length > 0) {
+                script = defaultScriptResult.rows[0];
+            }
+        }
+
+        res.json({
+            success: true,
+            data: {
+                call: call,
+                script: script
+            }
+        });
+
+    } catch (error) {
+        logger.error('Error getting script for conversation:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
 module.exports = router;

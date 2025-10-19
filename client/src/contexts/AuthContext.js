@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+// Assuming the import path is correct and 'api' handles Axios/fetch
 import api from "../services/api";
 
 const AuthContext = createContext();
@@ -6,6 +7,7 @@ const AuthContext = createContext();
 export const useAuth = () => {
     const context = useContext(AuthContext);
     if (!context) {
+        // Correct usage of Error object
         throw new Error("useAuth must be used within an AuthProvider");
     }
     return context;
@@ -19,7 +21,7 @@ export const AuthProvider = ({ children }) => {
         checkAuthStatus();
     }, []);
 
-    const checkAuthStatus = async() => {
+    const checkAuthStatus = async () => {
         try {
             const token = localStorage.getItem("token");
             if (!token) {
@@ -31,6 +33,7 @@ export const AuthProvider = ({ children }) => {
             api.defaults.headers.common.Authorization = `Bearer ${token}`;
 
             // Verify token with backend
+            // Using a try/catch block ensures we handle 401s here gracefully
             const response = await api.get("/auth/profile");
 
             if (response.data.success) {
@@ -48,7 +51,7 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const login = async(email, password) => {
+    const login = async (email, password) => {
         try {
             const response = await api.post("/auth/login", { email, password });
 
@@ -65,12 +68,13 @@ export const AuthProvider = ({ children }) => {
             console.error("Login error:", error);
             return {
                 success: false,
-                message: error ? .response ? .data ? .message || "Login failed. Please try again.",
+                // Using optional chaining safely here
+                message: error?.response?.data?.message || "Login failed. Please try again.",
             };
         }
     };
 
-    const register = async(userData) => {
+    const register = async (userData) => {
         try {
             const response = await api.post("/auth/register", userData);
 
@@ -91,8 +95,8 @@ export const AuthProvider = ({ children }) => {
             console.error("Registration error:", error);
             return {
                 success: false,
-                message: error ? .response ? .data ? .message || "Registration failed. Please try again.",
-                errors: error ? .response ? .data ? .errors || null,
+                message: error?.response?.data?.message || "Registration failed. Please try again.",
+                errors: error?.response?.data?.errors || null,
             };
         }
     };
@@ -104,7 +108,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     const updateUser = (userData) => {
-        setUser((prevUser) => ({...prevUser, ...userData }));
+        setUser((prevUser) => ({ ...prevUser, ...userData }));
     };
 
     const value = {
@@ -117,7 +121,10 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: !!user,
     };
 
-    return ( <
-        AuthContext.Provider value = { value } > { children } < /AuthContext.Provider>
+    // FIX: Removed the unnecessary semicolon after the function body and cleaned up the return format.
+    return (
+        <AuthContext.Provider value={value}>
+            {children}
+        </AuthContext.Provider>
     );
 };

@@ -5,11 +5,80 @@ services:
   ai_dialer:
     build: .
     container_name: ai_dialer_server
-    command: cd server && npm start
+    command: npm run server:dev
     ports:
       - "3000:3000"
-    env_file:
-      - .env
+    environment:
+      # Database
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=ai_dialer
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+
+      # API
+      - NODE_ENV=development
+      - PORT=3000
+      - API_URL=http://localhost:3000/api/v1
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - JWT_EXPIRES_IN=24h
+
+      # Asterisk ARI
+      - ARI_URL=http://asterisk:8088/ari
+      - ARI_USERNAME=ai-dialer
+      - ARI_PASSWORD=ai-dialer-password
+
+      # Voice Stack
+      - VOICE_STACK=self_hosted
+
+      # CORS - Allow both local frontend and Docker frontend
+      - CORS_ORIGIN=http://localhost:3001,http://localhost:3000
+
+      # Logging
+      - LOG_LEVEL=info
+      - DEBUG=ai-dialer:*
+      - ENABLE_DEBUG_LOGS=true
+
+      # Features
+      - ENABLE_EMOTION_DETECTION=true
+      - ENABLE_VOICE_ANALYTICS=true
+      - ENABLE_CALL_RECORDING=true
+      - ENABLE_REAL_TIME_MONITORING=true
+      - ENABLE_AI_CONVERSATION=true
+
+      # TTS - Using eSpeak for cost optimization
+      - TTS_ENGINE=espeak
+      - TTS_LANGUAGE=en-US
+      - TTS_VOICE=en-us
+      - TTS_SPEED=150
+      - TTS_PITCH=50
+      - TTS_VOLUME=100
+      - TTS_CACHE_ENABLED=true
+      - TTS_CACHE_TTL=3600
+      - TTS_CACHE_MAX_SIZE=1000
+
+      # Call Settings - Optimized for cost
+      - DEFAULT_CALL_TIMEOUT=30
+      - MAX_CALL_DURATION=180
+      - MAX_CONCURRENT_CALLS=10
+
+      # Rate Limiting
+      - RATE_LIMIT_WINDOW_MS=900000
+      - RATE_LIMIT_MAX_REQUESTS=100
+
+      # Health Check
+      - HEALTH_CHECK_INTERVAL=30000
+      - HEALTH_CHECK_TIMEOUT=5000
+
+      # Database Pool
+      - DB_POOL_MIN=2
+      - DB_POOL_MAX=10
+      - DB_POOL_IDLE_TIMEOUT=30000
     depends_on:
       - postgres
       - redis
@@ -20,6 +89,18 @@ services:
       - .:/usr/src/app
       - ./logs:/usr/src/app/logs
       - ./audio-cache:/usr/src/app/audio-cache
+    restart: always
+
+  # 🌐 AI Dialer Frontend
+  frontend:
+    build: ./client
+    container_name: ai_dialer_frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - ai_dialer
+    networks:
+      - ai-dialer-net
     restart: always
 
   # ☎️ Asterisk PBX Server
@@ -36,6 +117,7 @@ services:
       - ./asterisk-config:/etc/asterisk
       - ./asterisk-logs:/var/log/asterisk
       - ./audio-cache:/var/lib/asterisk/sounds/custom
+      - ./server/asterisk:/var/lib/asterisk/agi-bin
     environment:
       - ARI_PASSWORD=ai-dialer-password
     restart: always

@@ -2,7 +2,7 @@ import React from "react";
 import {
   ArrowDownTrayIcon,
   CurrencyDollarIcon,
-  TargetIcon,
+  ChartPieIcon,
   ChartBarIcon,
   HandThumbUpIcon,
   CheckCircleIcon,
@@ -26,7 +26,7 @@ const ExecutiveDashboard = () => {
       description: "Per qualified lead",
       change: "-18%",
       changeColor: "text-blue-600",
-      icon: TargetIcon,
+      icon: ChartPieIcon,
       iconColor: "text-blue-600",
       bgColor: "bg-blue-50",
     },

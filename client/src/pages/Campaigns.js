@@ -1,250 +1,226 @@
 import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "react-query";
-import {
-  PlusIcon,
-  PlayIcon,
-  PauseIcon,
-  ClockIcon,
-} from "@heroicons/react/24/outline";
+import { XMarkIcon } from "@heroicons/react/24/outline";
+import { useMutation, useQueryClient } from "react-query";
 import { campaignsAPI } from "../services/campaigns";
-import LoadingSpinner from "../components/LoadingSpinner";
+import toast from "react-hot-toast";
+import LoadingSpinner from "./LoadingSpinner";
 
-const Campaigns = () => {
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const queryClient = useQueryClient();
+const CreateCampaignModal = ({ isOpen, onClose }) => {
+    const [formData, setFormData] = useState({
+        name: "",
+        type: "sales",
+        voice_persona: "professional",
+        auto_retry: true,
+        best_time_enabled: true,
+        emotion_detection: true,
+    });
 
-  const { data: campaigns, isLoading, error } = useQuery(
-    "campaigns",
-    () => campaignsAPI.getCampaigns(),
-    {
-      refetchInterval: 30000,
-    }
-  );
+    const queryClient = useQueryClient();
 
-  const startCampaignMutation = useMutation(
-    (id) => campaignsAPI.startCampaign(id),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries("campaigns");
-      },
-    }
-  );
+    const createMutation = useMutation(
+        (data) => campaignsAPI.createCampaign(data), {
+            onSuccess: () => {
+                toast.success("Campaign created successfully!");
+                queryClient.invalidateQueries("campaigns");
+                onClose();
+                resetForm();
+            },
+            onError: (error) => {
+                toast.error(
+                    error ? .response ? .data ? .message || "Failed to create campaign"
+                );
+            },
+        }
+    );
 
-  const pauseCampaignMutation = useMutation(
-    (id) => campaignsAPI.pauseCampaign(id),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries("campaigns");
-      },
-    }
-  );
+    const resetForm = () => {
+        setFormData({
+            name: "",
+            type: "sales",
+            voice_persona: "professional",
+            auto_retry: true,
+            best_time_enabled: true,
+            emotion_detection: true,
+        });
+    };
 
-  const stopCampaignMutation = useMutation(
-    (id) => campaignsAPI.stopCampaign(id),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries("campaigns");
-      },
-    }
-  );
+    const handleSubmit = (e) => {
+        e.preventDefault();
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <div className="text-red-500">Error loading campaigns</div>;
+        if (!formData.name.trim()) {
+            toast.error("Campaign name is required");
+            return;
+        }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-        <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Create Campaign
-        </button>
-      </div>
+        createMutation.mutate(formData);
+    };
 
-      {/* Campaign Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {campaigns.map((campaign) => (
-          <div
-            key={campaign.id}
-            className="bg-gray-50 rounded-lg p-6 border border-gray-200"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {campaign.name}
-                </h3>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {campaign.type}
-                  </span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    {campaign.status}
-                  </span>
-                  {campaign.features.map((feature, index) => (
-                    <span
-                      key={index}
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        feature === "Auto-Retry"
-                          ? "bg-purple-100 text-purple-800"
-                          : "bg-orange-100 text-orange-800"
-                      }`}
-                    >
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="p-2 text-green-600 hover:bg-green-100 rounded-lg">
-                  <PlayIcon className="h-5 w-5" />
-                </button>
-                <button className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg">
-                  <PauseIcon className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData((prev) => ({
+            ...prev,
+            [name]: type === "checkbox" ? checked : value,
+        }));
+    };
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <p className="text-sm text-gray-600">Total Leads</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {campaign.metrics.totalLeads}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Completed</p>
-                <p className="text-lg font-semibold text-green-600">
-                  {campaign.metrics.completed}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Scheduled</p>
-                <p className="text-lg font-semibold text-blue-600">
-                  {campaign.metrics.scheduled}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Voice Persona</p>
-                <p className="text-lg font-semibold text-purple-600">
-                  {campaign.metrics.voicePersona}
-                </p>
-              </div>
-            </div>
+    if (!isOpen) return null;
 
-            {/* Progress Bar */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
-                <span>Progress</span>
-                <span>
-                  {Math.round(
-                    (campaign.metrics.completed / campaign.metrics.totalLeads) * 100
-                  )}
-                  %
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full"
-                  style={{ width: `${campaign.progress}%` }}
-                />
-              </div>
-            </div>
+    return ( <
+        div className = "fixed inset-0 z-50 overflow-y-auto" >
+        <
+        div className = "flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0" > { /* Background overlay */ } <
+        div className = "fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
+        onClick = { onClose }
+        />
 
-            {/* Credits Used */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Credits Used</span>
-              <span className="text-sm font-semibold text-orange-600">
-                {campaign.metrics.creditsUsed}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
+        { /* Modal panel */ } <
+        div className = "inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full" > { /* Header */ } <
+        div className = "flex items-center justify-between px-6 py-4 border-b border-gray-200" >
+        <
+        h3 className = "text-lg font-semibold text-gray-900" >
+        Create New Campaign <
+        /h3> <
+        button onClick = { onClose }
+        className = "text-gray-400 hover:text-gray-500 transition-colors" >
+        <
+        XMarkIcon className = "h-6 w-6" / >
+        <
+        /button> < /
+        div >
 
-      {/* Additional Analytics Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Objections Handled */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Top Objections Handled
-          </h3>
-          <div className="space-y-4">
-            {[
-              { objection: "Price concerns", frequency: 89, resolved: 76 },
-              { objection: "Timing issues", frequency: 67, resolved: 82 },
-              { objection: "Feature gaps", frequency: 45, resolved: 68 },
-              { objection: "Competitor comparison", frequency: 34, resolved: 71 },
-            ].map((item, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900">
-                    {item.objection}
-                  </span>
-                  <span className="text-sm text-gray-600">{item.frequency} times</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 bg-gray-200 rounded-full h-2 mr-4">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full"
-                      style={{ width: `${item.resolved}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium text-blue-600">
-                    {item.resolved}% resolved
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        { /* Form */ } <
+        form onSubmit = { handleSubmit } >
+        <
+        div className = "px-6 py-4 space-y-4" > { /* Campaign Name */ } <
+        div >
+        <
+        label className = "block text-sm font-medium text-gray-700 mb-1" >
+        Campaign Name < span className = "text-red-500" > * < /span> < /
+        label > <
+        input type = "text"
+        name = "name"
+        value = { formData.name }
+        onChange = { handleChange }
+        className = "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder = "e.g., Q4 Sales Outreach"
+        required /
+        >
+        <
+        /div>
 
-        {/* Best Time to Call */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <ClockIcon className="h-5 w-5 text-purple-600 mr-2" />
-            Best Time to Call (Success Rate)
-          </h3>
-          <div className="space-y-4">
-            {[
-              { time: "10:00 AM - 11:00 AM", calls: 142, success: 78 },
-              { time: "2:00 PM - 3:00 PM", calls: 189, success: 72 },
-              { time: "11:00 AM - 12:00 PM", calls: 156, success: 68 },
-              { time: "4:00 PM - 5:00 PM", calls: 98, success: 54 },
-              { time: "9:00 AM - 10:00 AM", calls: 67, success: 48 },
-            ].map((item, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <ClockIcon className="h-4 w-4 text-gray-400 mr-2" />
-                    <span className="text-sm font-medium text-gray-900">{item.time}</span>
-                  </div>
-                  <span className="text-sm text-gray-600">{item.calls} calls</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 bg-gray-200 rounded-full h-2 mr-4">
-                    <div
-                      className="bg-purple-600 h-2 rounded-full"
-                      style={{ width: `${item.success}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium text-purple-600">
-                    {item.success}%
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 bg-purple-50 rounded-lg p-3">
-            <p className="text-sm text-purple-800">
-              <span className="font-medium">AI Insight:</span> Scheduling calls
-              between 10-11 AM increases success rate by 32%
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+        { /* Campaign Type */ } <
+        div >
+        <
+        label className = "block text-sm font-medium text-gray-700 mb-1" >
+        Campaign Type < span className = "text-red-500" > * < /span> < /
+        label > <
+        select name = "type"
+        value = { formData.type }
+        onChange = { handleChange }
+        className = "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" >
+        <
+        option value = "sales" > Sales Outreach < /option> <
+        option value = "recruitment" > Recruitment Screening < /option> < /
+        select > <
+        /div>
+
+        { /* Voice Persona */ } <
+        div >
+        <
+        label className = "block text-sm font-medium text-gray-700 mb-1" >
+        Voice Persona <
+        /label> <
+        select name = "voice_persona"
+        value = { formData.voice_persona }
+        onChange = { handleChange }
+        className = "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" >
+        <
+        option value = "professional" > Professional < /option> <
+        option value = "casual" > Casual < /option> <
+        option value = "empathetic" > Empathetic < /option> <
+        option value = "enthusiastic" > Enthusiastic < /option> < /
+        select > <
+        /div>
+
+        { /* Feature Toggles */ } <
+        div className = "space-y-3 pt-2" >
+        <
+        div className = "flex items-center" >
+        <
+        input type = "checkbox"
+        name = "auto_retry"
+        checked = { formData.auto_retry }
+        onChange = { handleChange }
+        className = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /
+        >
+        <
+        label className = "ml-2 block text-sm text-gray-700" >
+        Enable Auto - Retry
+        for failed calls <
+        /label> < /
+        div >
+
+        <
+        div className = "flex items-center" >
+        <
+        input type = "checkbox"
+        name = "best_time_enabled"
+        checked = { formData.best_time_enabled }
+        onChange = { handleChange }
+        className = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /
+        >
+        <
+        label className = "ml-2 block text-sm text-gray-700" >
+        Enable Smart Timing(call at best times) <
+        /label> < /
+        div >
+
+        <
+        div className = "flex items-center" >
+        <
+        input type = "checkbox"
+        name = "emotion_detection"
+        checked = { formData.emotion_detection }
+        onChange = { handleChange }
+        className = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /
+        >
+        <
+        label className = "ml-2 block text-sm text-gray-700" >
+        Enable Emotion Detection <
+        /label> < /
+        div > <
+        /div> < /
+        div >
+
+        { /* Footer */ } <
+        div className = "px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end space-x-3" >
+        <
+        button type = "button"
+        onClick = { onClose }
+        className = "px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        disabled = { createMutation.isLoading } >
+        Cancel <
+        /button> <
+        button type = "submit"
+        className = "px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+        disabled = { createMutation.isLoading } > {
+            createMutation.isLoading ? ( <
+                >
+                <
+                LoadingSpinner size = "sm" / >
+                <
+                span className = "ml-2" > Creating... < /span> < / >
+            ) : (
+                "Create Campaign"
+            )
+        } <
+        /button> < /
+        div > <
+        /form> < /
+        div > <
+        /div> < /
+        div >
+    );
 };
 
-export default Campaigns;
+export default CreateCampaignModal;

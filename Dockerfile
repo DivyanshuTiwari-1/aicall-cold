@@ -1,5 +1,8 @@
 FROM node:18-alpine
 
+# Install eSpeak and sox for TTS
+RUN apk add --no-cache espeak espeak-dev sox
+
 # Set working directory
 WORKDIR /usr/src/app
 
@@ -17,6 +20,9 @@ RUN cd server && npm install
 
 # Copy source code
 COPY . .
+
+# Ensure server dependencies are available
+RUN cd server && npm install
 
 # Expose port
 EXPOSE 3000

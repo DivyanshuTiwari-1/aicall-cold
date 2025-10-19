@@ -1,26 +1,21 @@
 <?php
 /**
- * AI Dialer AGI Script - Main Call Handler
+ * AI Inbound AGI Script - Inbound Call Handler
  *
- * This script handles the main conversation flow during AI dialer calls.
- * It communicates with the Node.js server to get scripts, process responses,
- * and manage the conversation state.
+ * This script handles incoming calls to the AI dialer system.
+ * It can route calls to appropriate handlers or provide basic responses.
  */
 
 // AGI Environment Variables
-$call_id = $argv[1] ?? '';
-$contact_phone = $argv[2] ?? '';
-$campaign_id = $argv[3] ?? '';
+$caller_id = $argv[1] ?? '';
+$caller_name = $argv[2] ?? '';
 
 // Configuration
 $api_base_url = getenv('AI_DIALER_URL') ?: 'http://localhost:3000/api/v1';
-$max_conversation_turns = 20;
-$silence_timeout = 5;
-$response_timeout = 10;
 
 // Logging function
 function agi_log($message) {
-    error_log("[AI-DIALER-AGI] " . $message);
+    error_log("[AI-INBOUND-AGI] " . $message);
 }
 
 // Make API request to Node.js server
@@ -86,7 +81,7 @@ function play_tts($text, $voice = 'en-us') {
 
     if ($audio_url) {
         // Download and play the audio file
-        $temp_file = (PHP_OS_FAMILY === 'Windows') ? 'C:\\tmp\\tts_' . uniqid() . '.wav' : '/tmp/tts_' . uniqid() . '.wav';
+        $temp_file = '/tmp/inbound_tts_' . uniqid() . '.wav';
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $audio_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -103,9 +98,8 @@ function play_tts($text, $voice = 'en-us') {
     }
 
     // Fallback to espeak
-    $fallback_file = (PHP_OS_FAMILY === 'Windows') ? 'C:\\tmp\\fallback.wav' : '/tmp/fallback.wav';
-    $agi->exec('System', "espeak -s 150 -v $voice \"$text\" -w $fallback_file");
-    $agi->exec('Playback', $fallback_file);
+    $agi->exec('System', "espeak -s 150 -v $voice \"$text\" -w /tmp/inbound_fallback.wav");
+    $agi->exec('Playback', '/tmp/inbound_fallback');
     return true;
 }
 
@@ -113,7 +107,7 @@ function play_tts($text, $voice = 'en-us') {
 function record_response($max_duration = 10) {
     global $agi;
 
-    $filename = (PHP_OS_FAMILY === 'Windows') ? 'C:\\tmp\\response_' . uniqid() . '.wav' : '/tmp/response_' . uniqid() . '.wav';
+    $filename = '/tmp/inbound_response_' . uniqid() . '.wav';
     $agi->exec('Record', "$filename wav # $max_duration");
 
     return $filename;
@@ -153,50 +147,36 @@ try {
     // Initialize AGI
     $agi = new AGI();
 
-    agi_log("Starting AI call - Call ID: $call_id, Phone: $contact_phone, Campaign: $campaign_id");
+    agi_log("Incoming call - Caller ID: $caller_id, Name: $caller_name");
 
-    // Notify server that call has started
-    make_api_request('/asterisk/call-started', [
-        'call_id' => $call_id,
-        'contact_phone' => $contact_phone,
-        'campaign_id' => $campaign_id,
-        'timestamp' => date('c')
-    ]);
+    // Notify server about incoming call
+    $inbound_data = [
+        'caller_id' => $caller_id,
+        'caller_name' => $caller_name,
+        'timestamp' => date('c'),
+        'call_type' => 'inbound'
+    ];
 
-    // Get initial script for the campaign
-    $script_response = make_api_request('/scripts/conversation', [
-        'call_id' => $call_id,
-        'question' => 'initial_greeting',
-        'context' => [
-            'campaign_id' => $campaign_id,
-            'contact_phone' => $contact_phone
-        ]
-    ]);
+    make_api_request('/asterisk/inbound-call', $inbound_data);
 
-    if (!$script_response || !$script_response['success']) {
-        agi_log("Failed to get initial script");
-        $agi->exec('Playback', 'ai-dialer/script-error');
-        exit(1);
-    }
+    // Play welcome message
+    $welcome_message = "Thank you for calling. This is an AI assistant. How can I help you today?";
+    agi_log("Playing welcome message");
+    play_tts($welcome_message);
 
-    // Play initial greeting/script
-    $initial_text = $script_response['main_script'] ?? 'Hello, this is an AI assistant calling on behalf of our company.';
-    agi_log("Playing initial script: " . substr($initial_text, 0, 100) . "...");
-    play_tts($initial_text);
-
-    // Main conversation loop
+    // Simple conversation loop for inbound calls
+    $max_turns = 10;
     $conversation_turn = 0;
-    $call_active = true;
 
-    while ($call_active && $conversation_turn < $max_conversation_turns) {
+    while ($conversation_turn < $max_turns) {
         $conversation_turn++;
-        agi_log("Conversation turn: $conversation_turn");
+        agi_log("Inbound conversation turn: $conversation_turn");
 
         // Wait for caller response
         $agi->exec('WaitForSilence', "1000 2000");
 
         // Record caller response
-        $response_file = record_response(10);
+        $response_file = record_response(15);
 
         if (file_exists($response_file) && filesize($response_file) > 1000) {
             // Convert speech to text
@@ -206,43 +186,36 @@ try {
             if ($caller_text) {
                 agi_log("Caller said: " . substr($caller_text, 0, 100) . "...");
 
-                // Process conversation with AI
-                $conversation_response = make_api_request('/conversation/process', [
-                    'call_id' => $call_id,
-                    'user_input' => $caller_text,
+                // Process with general knowledge base
+                $response = make_api_request('/knowledge/query', [
+                    'question' => $caller_text,
                     'context' => [
-                        'turn' => $conversation_turn,
-                        'campaign_id' => $campaign_id
+                        'caller_id' => $caller_id,
+                        'caller_name' => $caller_name,
+                        'call_type' => 'inbound'
                     ]
                 ]);
 
-                if ($conversation_response && $conversation_response['success']) {
-                    $ai_response = $conversation_response['answer'];
-                    $confidence = $conversation_response['confidence'] ?? 0;
-                    $should_fallback = $conversation_response['should_fallback'] ?? false;
+                if ($response && $response['success']) {
+                    $ai_response = $response['answer'];
+                    $confidence = $response['confidence'] ?? 0;
 
                     agi_log("AI Response (confidence: $confidence): " . substr($ai_response, 0, 100) . "...");
 
                     // Play AI response
                     play_tts($ai_response);
 
-                    // Check if we should end the call
-                    if ($should_fallback || $confidence < 0.3) {
-                        agi_log("Low confidence or fallback requested, ending call");
-                        $call_active = false;
-                    }
+                    // Check if caller wants to end the call
+                    $end_phrases = ['thank you', 'goodbye', 'bye', 'that\'s all', 'nothing else'];
+                    $caller_lower = strtolower($caller_text);
 
-                    // Check for closing indicators
-                    if (isset($conversation_response['suggested_actions'])) {
-                        $actions = $conversation_response['suggested_actions'];
-                        if (in_array('schedule_meeting', $actions) || in_array('end_call', $actions)) {
-                            agi_log("Call completion suggested by AI");
-                            $call_active = false;
-                        }
+                    if (in_array($caller_lower, $end_phrases) || strpos($caller_lower, 'thank you') !== false) {
+                        agi_log("Caller indicated end of conversation");
+                        break;
                     }
                 } else {
-                    agi_log("Failed to process conversation");
-                    play_tts("I'm sorry, I didn't catch that. Could you please repeat?");
+                    agi_log("Failed to process caller question");
+                    play_tts("I'm sorry, I didn't understand that. Could you please rephrase your question?");
                 }
             } else {
                 agi_log("No speech detected or transcription failed");
@@ -258,27 +231,30 @@ try {
     }
 
     // End of conversation
-    if ($conversation_turn >= $max_conversation_turns) {
-        agi_log("Maximum conversation turns reached");
-        play_tts("Thank you for your time. Have a great day!");
+    if ($conversation_turn >= $max_turns) {
+        agi_log("Maximum conversation turns reached for inbound call");
     }
 
-    // Notify server that call is ending
-    make_api_request('/asterisk/call-ended', [
-        'call_id' => $call_id,
-        'reason' => 'conversation_complete',
+    // Play closing message
+    play_tts("Thank you for calling. Have a great day!");
+
+    // Notify server that inbound call is ending
+    make_api_request('/asterisk/inbound-call-ended', [
+        'caller_id' => $caller_id,
+        'caller_name' => $caller_name,
         'turns' => $conversation_turn,
         'timestamp' => date('c')
     ]);
 
-    agi_log("AI call completed successfully");
+    agi_log("Inbound call completed successfully");
 
 } catch (Exception $e) {
-    agi_log("Error in AI dialer AGI: " . $e->getMessage());
+    agi_log("Error in inbound AGI: " . $e->getMessage());
 
     // Notify server of error
-    make_api_request('/asterisk/call-error', [
-        'call_id' => $call_id,
+    make_api_request('/asterisk/inbound-call-error', [
+        'caller_id' => $caller_id,
+        'caller_name' => $caller_name,
         'error' => $e->getMessage(),
         'timestamp' => date('c')
     ]);

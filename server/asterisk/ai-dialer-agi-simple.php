@@ -1,6 +1,6 @@
 <?php
 /**
- * AI Dialer AGI Script - Main Call Handler
+ * AI Dialer AGI Script - Simple Version (No PHP-AGI dependency)
  *
  * This script handles the main conversation flow during AI dialer calls.
  * It communicates with the Node.js server to get scripts, process responses,
@@ -13,10 +13,8 @@ $contact_phone = $argv[2] ?? '';
 $campaign_id = $argv[3] ?? '';
 
 // Configuration
-$api_base_url = getenv('AI_DIALER_URL') ?: 'http://localhost:3000/api/v1';
+$api_base_url = getenv('AI_DIALER_URL') ?: 'http://ai_dialer:3000/api/v1';
 $max_conversation_turns = 20;
-$silence_timeout = 5;
-$response_timeout = 10;
 
 // Logging function
 function agi_log($message) {
@@ -59,6 +57,40 @@ function make_api_request($endpoint, $data = []) {
     return json_decode($response, true);
 }
 
+// Make GET API request to Node.js server
+function make_api_get($endpoint) {
+    global $api_base_url;
+
+    $url = $api_base_url . $endpoint;
+    $ch = curl_init();
+
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HTTPGET, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Accept: application/json'
+    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($error) {
+        agi_log("CURL Error: " . $error);
+        return false;
+    }
+
+    if ($http_code !== 200) {
+        agi_log("API Error: HTTP $http_code - $response");
+        return false;
+    }
+
+    return json_decode($response, true);
+}
+
 // Get TTS audio for text
 function get_tts_audio($text, $voice = 'en-us') {
     global $api_base_url;
@@ -69,7 +101,7 @@ function get_tts_audio($text, $voice = 'en-us') {
         'speed' => 1.0
     ];
 
-    $response = make_api_request('/tts/generate', $data);
+    $response = make_api_request('/asterisk/tts/generate', $data);
 
     if ($response && isset($response['audio_url'])) {
         return $response['audio_url'];
@@ -78,43 +110,31 @@ function get_tts_audio($text, $voice = 'en-us') {
     return false;
 }
 
-// Play TTS audio
+// Play TTS audio using system espeak
 function play_tts($text, $voice = 'en-us') {
-    global $agi;
+    $temp_file = '/var/lib/asterisk/sounds/custom/tts_' . uniqid() . '.wav';
+    $command = "espeak -s 150 -v $voice \"$text\" -w $temp_file";
 
-    $audio_url = get_tts_audio($text, $voice);
+    system($command);
 
-    if ($audio_url) {
-        // Download and play the audio file
-        $temp_file = (PHP_OS_FAMILY === 'Windows') ? 'C:\\tmp\\tts_' . uniqid() . '.wav' : '/tmp/tts_' . uniqid() . '.wav';
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $audio_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        $audio_data = curl_exec($ch);
-        curl_close($ch);
-
-        if ($audio_data) {
-            file_put_contents($temp_file, $audio_data);
-            $agi->exec('Playback', $temp_file);
-            unlink($temp_file);
-            return true;
-        }
+    if (file_exists($temp_file)) {
+        // Play the audio file using AGI command
+        echo "STREAM FILE custom/" . basename($temp_file) . " \"\"\n";
+        echo "WAIT FOR DIGIT 0\n";
+        unlink($temp_file);
+        return true;
     }
 
-    // Fallback to espeak
-    $fallback_file = (PHP_OS_FAMILY === 'Windows') ? 'C:\\tmp\\fallback.wav' : '/tmp/fallback.wav';
-    $agi->exec('System', "espeak -s 150 -v $voice \"$text\" -w $fallback_file");
-    $agi->exec('Playback', $fallback_file);
-    return true;
+    return false;
 }
 
 // Record caller response
 function record_response($max_duration = 10) {
-    global $agi;
+    $filename = '/tmp/response_' . uniqid() . '.wav';
 
-    $filename = (PHP_OS_FAMILY === 'Windows') ? 'C:\\tmp\\response_' . uniqid() . '.wav' : '/tmp/response_' . uniqid() . '.wav';
-    $agi->exec('Record', "$filename wav # $max_duration");
+    // Use AGI command to record
+    echo "RECORD FILE $filename wav \"\" $max_duration\n";
+    echo "WAIT FOR DIGIT 0\n";
 
     return $filename;
 }
@@ -128,7 +148,7 @@ function speech_to_text($audio_file) {
     }
 
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $api_base_url . '/speech/transcribe');
+    curl_setopt($ch, CURLOPT_URL, $api_base_url . '/asterisk/speech/transcribe');
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, [
         'audio' => new CURLFile($audio_file, 'audio/wav', 'audio.wav')
@@ -150,9 +170,6 @@ function speech_to_text($audio_file) {
 
 // Main execution
 try {
-    // Initialize AGI
-    $agi = new AGI();
-
     agi_log("Starting AI call - Call ID: $call_id, Phone: $contact_phone, Campaign: $campaign_id");
 
     // Notify server that call has started
@@ -164,23 +181,16 @@ try {
     ]);
 
     // Get initial script for the campaign
-    $script_response = make_api_request('/scripts/conversation', [
-        'call_id' => $call_id,
-        'question' => 'initial_greeting',
-        'context' => [
-            'campaign_id' => $campaign_id,
-            'contact_phone' => $contact_phone
-        ]
-    ]);
+    $script_response = make_api_get('/scripts/conversation?call_id=' . urlencode($call_id) . '&conversation_type=main_pitch');
 
     if (!$script_response || !$script_response['success']) {
         agi_log("Failed to get initial script");
-        $agi->exec('Playback', 'ai-dialer/script-error');
-        exit(1);
+        $initial_text = 'Hello, this is an AI assistant calling on behalf of our company.';
+    } else {
+        $initial_text = $script_response['main_script'] ?? 'Hello, this is an AI assistant calling on behalf of our company.';
     }
 
     // Play initial greeting/script
-    $initial_text = $script_response['main_script'] ?? 'Hello, this is an AI assistant calling on behalf of our company.';
     agi_log("Playing initial script: " . substr($initial_text, 0, 100) . "...");
     play_tts($initial_text);
 
@@ -193,7 +203,7 @@ try {
         agi_log("Conversation turn: $conversation_turn");
 
         // Wait for caller response
-        $agi->exec('WaitForSilence', "1000 2000");
+        sleep(2);
 
         // Record caller response
         $response_file = record_response(10);
@@ -283,7 +293,6 @@ try {
         'timestamp' => date('c')
     ]);
 
-    $agi->exec('Playback', 'ai-dialer/error');
     exit(1);
 }
 ?>
