@@ -27,7 +27,7 @@
         "ws": "^8.14.2"
     },
     "scripts": {
-        "start": "set GENERATE_SOURCEMAP=false && react-scripts start",
+        "start": "set GENERATE_SOURCEMAP=false && set PORT=3001 && react-scripts start",
         "start:dev": "set GENERATE_SOURCEMAP=false && set HOST=localhost && set PORT=3000 && react-scripts start",
         "start:prod": "set GENERATE_SOURCEMAP=false && set HOST=0.0.0.0 && set PORT=3000 && react-scripts start",
         "start:clean": "npm run clean && npm start",

@@ -736,7 +736,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         // Start the automated call queue
         try {
             const { callQueue } = require('../services/queue');
-            await callQueue.startQueue(campaignId);
+            await callQueue.startQueue(null, campaignId);
 
             logger.info(`Automated calls started for campaign: ${campaignId}`);
 

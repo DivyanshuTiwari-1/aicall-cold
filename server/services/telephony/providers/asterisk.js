@@ -23,8 +23,8 @@ async function startOutboundCall({ callId, toPhone }) {
     // Originate call via Asterisk ARI to Telnyx endpoint
     const client = await connectAri();
     try {
-        // Use telnyx_endpoint from pjsip.conf
-        const endpoint = `PJSIP/${toPhone}@telnyx_endpoint`;
+        // Use telnyx_outbound from pjsip.conf
+        const endpoint = `PJSIP/${toPhone}@telnyx_outbound`;
 
         await client.channels.originate({
             endpoint: endpoint,
@@ -46,14 +46,21 @@ async function startOutboundCall({ callId, toPhone }) {
     }
 }
 
-async function startManualCall({ callId, agentExtension, toPhone, contactId }) {
+async function startManualCall({ callId, agentExtension, agentUserId, toPhone, contactId }) {
     const client = await connectAri();
     try {
         logger.info(`Starting manual call: ${callId}, agent: ${agentExtension}, to: ${toPhone}`);
 
+        // Verify agent extension exists
+        if (!agentExtension) {
+            throw new Error('Agent SIP extension not configured');
+        }
+
         // Step 1: Call agent first
+        // Use the user ID to construct the correct endpoint name
+        // The endpoint is named agent_{USER_ID}, not agent_{EXTENSION}
         const agentChannel = await client.channels.originate({
-            endpoint: `PJSIP/${agentExtension}`,
+            endpoint: `PJSIP/agent_${agentUserId}`,
             app: 'manual-dialer-bridge-stasis',
             appArgs: [callId, contactId].join(','),
             callerId: 'Internal Call'
@@ -65,7 +72,7 @@ async function startManualCall({ callId, agentExtension, toPhone, contactId }) {
                 logger.info(`Agent ${agentExtension} answered, now dialing customer ${toPhone}`);
 
                 const customerChannel = await client.channels.originate({
-                    endpoint: `PJSIP/${toPhone}@telnyx_endpoint`,
+                    endpoint: `PJSIP/${toPhone}@telnyx_outbound`,
                     app: 'manual-dialer-bridge-stasis',
                     appArgs: [callId, contactId].join(','),
                     callerId: process.env.TELNYX_DID || '+12025550123'

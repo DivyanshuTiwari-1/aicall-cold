@@ -81,7 +81,7 @@ router.post('/start', authenticateToken, requireRole('agent'), async(req, res) =
 
         // Check if user has SIP extension
         const userResult = await query(`
-            SELECT sip_extension, sip_username, is_available
+            SELECT id, sip_extension, sip_username, is_available
             FROM users
             WHERE id = $1
         `, [req.user.id]);
@@ -135,6 +135,7 @@ router.post('/start', authenticateToken, requireRole('agent'), async(req, res) =
             await startManualCall({
                 callId: call.id,
                 agentExtension: user.sip_extension,
+                agentUserId: user.id,
                 toPhone: contact.phone,
                 contactId: contactId
             });

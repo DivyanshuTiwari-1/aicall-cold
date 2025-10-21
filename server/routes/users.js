@@ -4,6 +4,7 @@ const Joi = require('joi');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const sipProvisioning = require('../services/sip-provisioning');
 
 const router = express.Router();
 
@@ -109,29 +110,48 @@ router.post('/', authenticateToken, requireRole('admin'), async(req, res) => {
         // Hash password
         const passwordHash = await bcrypt.hash(password, 12);
 
-        // Generate SIP extension for agents
-        let sipExtension = null;
-        let sipUsername = null;
-        let sipPassword = null;
-
-        if (roleType === 'agent') {
-            sipExtension = await generateNextSIPExtension();
-            sipUsername = `agent_${Date.now().toString().slice(-6)}`;
-            sipPassword = generateSecurePassword();
-        }
-
-        // Create user
+        // Create user first (without SIP credentials)
         const result = await query(`
             INSERT INTO users (organization_id, email, password_hash, first_name, last_name,
-                             role_type, daily_call_target, sip_extension, sip_username, sip_password)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                             role_type, daily_call_target)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id, email, first_name, last_name, role_type, daily_call_target,
-                     sip_extension, sip_username, is_active, created_at
+                     is_active, created_at
         `, [req.organizationId, email, passwordHash, firstName, lastName,
-            roleType, dailyCallTarget, sipExtension, sipUsername, sipPassword
+            roleType, dailyCallTarget
         ]);
 
         const user = result.rows[0];
+
+        // Provision SIP credentials for agents
+        if (roleType === 'agent') {
+            try {
+                const sipExtension = sipProvisioning.generateSipExtension(user.id);
+                const sipPassword = sipProvisioning.generateSipCredentials();
+                const sipUsername = sipProvisioning.generateSipUsername(sipExtension);
+
+                // Provision the SIP endpoint
+                await sipProvisioning.provisionAgentEndpoint(user.id, sipExtension, sipUsername, sipPassword);
+
+                // Update user with SIP credentials
+                await query(`
+                    UPDATE users
+                    SET sip_extension = $1, sip_username = $2, sip_password = $3
+                    WHERE id = $4
+                `, [sipExtension, sipUsername, sipPassword, user.id]);
+
+                // Add SIP credentials to user object
+                user.sip_extension = sipExtension;
+                user.sip_username = sipUsername;
+
+                logger.info(`SIP endpoint provisioned for agent ${user.id}: ${sipExtension}`);
+
+            } catch (sipError) {
+                logger.error(`Failed to provision SIP for agent ${user.id}:`, sipError);
+                // Don't fail user creation if SIP provisioning fails
+                // The user can still be created and SIP can be provisioned later
+            }
+        }
 
         // Log audit event
         await query(`
@@ -421,6 +441,50 @@ router.get('/:id/performance', authenticateToken, async(req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch user performance'
+        });
+    }
+});
+
+// Get current user's SIP credentials
+router.get('/me/sip-credentials', authenticateToken, async(req, res) => {
+    try {
+        const user = req.user;
+
+        if (user.roleType !== 'agent') {
+            return res.status(403).json({
+                success: false,
+                message: 'SIP credentials are only available for agents'
+            });
+        }
+
+        // Get SIP configuration from provisioning service
+        const sipConfig = await sipProvisioning.getAgentSipConfig(user.id);
+
+        if (!sipConfig) {
+            return res.status(404).json({
+                success: false,
+                message: 'SIP credentials not found. Please contact administrator.'
+            });
+        }
+
+        res.json({
+            success: true,
+            sipCredentials: {
+                extension: sipConfig.extension,
+                username: sipConfig.username,
+                password: sipConfig.password,
+                server: sipConfig.server,
+                port: sipConfig.port,
+                transport: sipConfig.transport,
+                domain: process.env.ASTERISK_HOST || 'localhost'
+            }
+        });
+
+    } catch (error) {
+        logger.error('Get SIP credentials error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get SIP credentials'
         });
     }
 });

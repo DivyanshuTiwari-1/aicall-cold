@@ -34,6 +34,8 @@ const { connectRedis } = require('./config/redis');
 const { createTables } = require('./scripts/migrate');
 const logger = require('./utils/logger');
 const { authenticateToken } = require('./middleware/auth');
+const stasisManager = require('./services/stasis-apps');
+const addSipFields = require('./scripts/migrations/add-sip-fields');
 
 const app = express();
 const server = createServer(app);
@@ -270,17 +272,37 @@ async function startServer() {
         await connectRedis();
         await createTables();
 
+        // Run SIP fields migration
+        await addSipFields();
+
+        // Initialize Stasis applications
+        await stasisManager.initialize();
+
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
             logger.info(`🚀 AI Dialer API Server running on port ${PORT}`);
             logger.info(`📊 Health check: http://localhost:${PORT}/health`);
             logger.info(`🔌 WebSocket server ready for real-time connections`);
+            logger.info(`☎️  Stasis applications initialized for call handling`);
         });
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);
     }
 }
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+    logger.info('🔄 Received SIGINT, shutting down gracefully...');
+    await stasisManager.shutdown();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    logger.info('🔄 Received SIGTERM, shutting down gracefully...');
+    await stasisManager.shutdown();
+    process.exit(0);
+});
 
 startServer();
 

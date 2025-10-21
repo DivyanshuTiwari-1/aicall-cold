@@ -90,17 +90,27 @@ services:
       - DB_POOL_MAX=10
       - DB_POOL_IDLE_TIMEOUT=30000
     depends_on:
-      - postgres
-      - redis
-      - asterisk
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      asterisk:
+        condition: service_started
     networks:
       - ai-dialer-net
     volumes:
       - ./server:/usr/src/app
       - ./logs:/usr/src/app/logs
       - ./audio-cache:/usr/src/app/audio-cache
+      - ./asterisk-config:/usr/src/asterisk-config
+      - ./docker-init.sh:/usr/local/bin/docker-init.sh
       - /usr/src/app/node_modules
     restart: always
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # 🌐 AI Dialer Frontend
   frontend:
@@ -115,13 +125,19 @@ services:
       - REACT_APP_WS_URL=ws://ai_dialer:3000
       - REACT_APP_API_BASE_URL=http://localhost:3000
     depends_on:
-      - ai_dialer
+      ai_dialer:
+        condition: service_healthy
     networks:
       - ai-dialer-net
     volumes:
       - ./client:/app
       - /app/node_modules
     restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # ☎️ Asterisk PBX Server
   asterisk:
@@ -138,6 +154,7 @@ services:
       - ./asterisk-logs:/var/log/asterisk
       - ./audio-cache:/var/lib/asterisk/sounds/custom
       - ./server/asterisk:/var/lib/asterisk/agi-bin
+      - ./asterisk-config/pjsip_dynamic.conf:/etc/asterisk/pjsip_dynamic.conf
     environment:
       - ARI_PASSWORD=ai-dialer-password
     restart: always
@@ -151,12 +168,18 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ai_dialer
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
     networks:
       - ai-dialer-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_dialer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ⚡ Redis Cache
   redis:
@@ -167,6 +190,11 @@ services:
     networks:
       - ai-dialer-net
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   ai-dialer-net:

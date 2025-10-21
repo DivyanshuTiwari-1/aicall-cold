@@ -7,14 +7,14 @@ const isDocker = process.env.NODE_ENV === 'production' ||
                  process.env.DB_HOST === 'postgres' ||
                  process.env.HOSTNAME?.includes('ai_dialer_server');
 const defaultHost = 'localhost'; // Always use localhost for local development
-const defaultPort = 5432; // Use 5432 for standard PostgreSQL
+const defaultPort = 5433; // Use 5433 for local development (Docker maps 5432->5433)
 
 const dbConfig = {
     host: process.env.DB_HOST || defaultHost,
     port: parseInt(process.env.DB_PORT) || defaultPort,
     database: process.env.DB_NAME || 'ai_dialer',
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres', // Use postgres password
 };
 
 // Log database configuration for debugging
@@ -23,6 +23,8 @@ logger.info('Database configuration:', {
     port: dbConfig.port,
     database: dbConfig.database,
     user: dbConfig.user,
+    password: dbConfig.password ? '[REDACTED]' : 'undefined',
+    passwordType: typeof dbConfig.password,
     isDocker,
     dockerEnv: process.env.DOCKER_ENV,
     nodeEnv: process.env.NODE_ENV,

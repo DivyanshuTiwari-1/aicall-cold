@@ -1,6 +1,9 @@
 # Development Dockerfile for Node.js backend with hot reloading
 FROM node:18-alpine
 
+# Install PostgreSQL client for health checks and migrations
+RUN apk add --no-cache postgresql-client
+
 WORKDIR /usr/src/app
 
 # Copy package files
@@ -15,5 +18,5 @@ RUN npm install -g nodemon
 # Expose port
 EXPOSE 3000
 
-# Start development server with hot reloading
+# Start the application directly (initialization will be handled by docker-compose)
 CMD ["npm", "run", "server:dev"]

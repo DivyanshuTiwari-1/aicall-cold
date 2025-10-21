@@ -41,11 +41,25 @@ const Softphone = ({
             }
 
             try {
-                const socket = new JsSIP.WebSocketInterface('wss://your-asterisk-server:8089/ws');
+                // Fetch SIP credentials from API
+                const response = await fetch('/api/v1/users/me/sip-credentials', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to get SIP credentials');
+                }
+
+                const { sipCredentials } = await response.json();
+
+                const socket = new JsSIP.WebSocketInterface(`wss://${sipCredentials.server}:${sipCredentials.port}/ws`);
                 const configuration = {
                     sockets: [socket],
-                    uri: `sip:${window.user?.sipUsername}@your-asterisk-server`,
-                    password: window.user?.sipPassword,
+                    uri: `sip:${sipCredentials.username}@${sipCredentials.domain}`,
+                    password: sipCredentials.password,
                     register: true,
                     register_expires: 600,
                     no_answer_timeout: 30,
@@ -58,14 +72,26 @@ const Softphone = ({
                 sipRef.current.on('registered', () => {
                     setIsRegistered(true);
                     setError(null);
+                    console.log('SIP registered successfully');
                 });
 
                 sipRef.current.on('unregistered', () => {
                     setIsRegistered(false);
+                    console.log('SIP unregistered');
                 });
 
                 sipRef.current.on('registrationFailed', (e) => {
-                    setError('Registration failed');
+                    setError('SIP registration failed: ' + e.cause);
+                    setIsRegistered(false);
+                    console.error('SIP registration failed:', e);
+                });
+
+                sipRef.current.on('connected', () => {
+                    console.log('SIP connected to server');
+                });
+
+                sipRef.current.on('disconnected', () => {
+                    console.log('SIP disconnected from server');
                     setIsRegistered(false);
                 });
 
