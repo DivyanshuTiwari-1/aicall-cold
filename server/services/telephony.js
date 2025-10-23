@@ -8,12 +8,13 @@ const { startOutboundCall: asteriskStartOutboundCall } = require('./telephony/pr
 
 async function startOutboundCall({ callId, organizationId, campaignId, contactId, toPhone, automated = false }) {
     try {
-        logger.info(`Starting outbound call: ${callId} to ${toPhone} (automated: ${automated})`);
+        logger.info(`Starting outbound call: ${callId} to ${toPhone} (automated: ${automated}, campaign: ${campaignId})`);
 
         // Use existing Asterisk provider for real telephony
         const result = await asteriskStartOutboundCall({
             callId: callId,
-            toPhone: toPhone
+            toPhone: toPhone,
+            campaignId: campaignId
         });
 
         logger.info(`Call ${callId} initiated successfully to ${toPhone}`);

@@ -4,6 +4,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createServer } = require('http');
 const { WebSocketServer } = require('ws');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const authRoutes = require('./routes/auth');
@@ -26,6 +28,8 @@ const aiIntelligenceRoutes = require('./routes/ai-intelligence');
 const billingRoutes = require('./routes/billing');
 const warmTransferRoutes = require('./routes/warm-transfers');
 const webhookRoutes = require('./routes/webhooks');
+const simpleCallRoutes = require('./routes/simple-calls');
+const phoneNumberRoutes = require('./routes/phone-numbers');
 // Initialize telephony provider early
 require('./services/telephony');
 
@@ -36,6 +40,7 @@ const logger = require('./utils/logger');
 const { authenticateToken } = require('./middleware/auth');
 const stasisManager = require('./services/stasis-apps');
 const addSipFields = require('./scripts/migrations/add-sip-fields');
+const addTranscriptField = require('./scripts/migrations/add-transcript-field');
 
 const app = express();
 const server = createServer(app);
@@ -91,6 +96,8 @@ app.use('/api/v1/ai-intelligence', authenticateToken, aiIntelligenceRoutes);
 app.use('/api/v1/billing', authenticateToken, billingRoutes);
 app.use('/api/v1/warm-transfers', authenticateToken, warmTransferRoutes);
 app.use('/api/v1/webhooks', authenticateToken, webhookRoutes);
+app.use('/api/v1/simple-calls', authenticateToken, simpleCallRoutes);
+app.use('/api/v1/phone-numbers', authenticateToken, phoneNumberRoutes);
 app.use('/api/v1/campaigns', authenticateToken, campaignRoutes);
 app.use('/api/v1/contacts', authenticateToken, contactRoutes);
 app.use('/api/v1/calls', authenticateToken, callRoutes);
@@ -268,12 +275,20 @@ app.use('*', (req, res) => {
 // Initialize database and start server
 async function startServer() {
     try {
+        // Create necessary directories
+        const uploadsDir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+            logger.info('📁 Created uploads directory');
+        }
+
         await connectDB();
         await connectRedis();
         await createTables();
 
-        // Run SIP fields migration
+        // Run migrations
         await addSipFields();
+        await addTranscriptField();
 
         // Initialize Stasis applications
         await stasisManager.initialize();

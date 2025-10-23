@@ -110,21 +110,54 @@ function get_tts_audio($text, $voice = 'en-us') {
     return false;
 }
 
-// Play TTS audio using system espeak
-function play_tts($text, $voice = 'en-us') {
+// Play TTS audio using API service
+function play_tts($text, $voice = 'female') {
+    global $api_base_url;
+
+    agi_log("Requesting TTS for: " . substr($text, 0, 50) . "...");
+
+    // Call the TTS API
+    $tts_response = make_api_request('/asterisk/tts/generate', [
+        'text' => $text,
+        'voice' => $voice,
+        'speed' => 1.0
+    ]);
+
+    if ($tts_response && isset($tts_response['audio_url'])) {
+        $audio_url = $tts_response['audio_url'];
+        agi_log("Got TTS audio URL: " . $audio_url);
+
+        // Download audio file
+        $temp_file = '/tmp/tts_' . uniqid() . '.wav';
+        $audio_content = file_get_contents($audio_url);
+
+        if ($audio_content) {
+            file_put_contents($temp_file, $audio_content);
+
+            // Play via Asterisk AGI
+            echo "STREAM FILE " . $temp_file . " \"\"\n";
+            $result = fgets(STDIN);
+
+            // Clean up
+            unlink($temp_file);
+            return true;
+        }
+    }
+
+    // Fallback to local espeak if API fails
+    agi_log("TTS API failed, using local espeak fallback");
     $temp_file = '/var/lib/asterisk/sounds/custom/tts_' . uniqid() . '.wav';
-    $command = "espeak -s 150 -v $voice \"$text\" -w $temp_file";
+    $command = "espeak -s 150 -v en-us \"$text\" -w $temp_file 2>&1";
+    exec($command, $output, $return_code);
 
-    system($command);
-
-    if (file_exists($temp_file)) {
-        // Play the audio file using AGI command
-        echo "STREAM FILE custom/" . basename($temp_file) . " \"\"\n";
-        echo "WAIT FOR DIGIT 0\n";
+    if (file_exists($temp_file) && filesize($temp_file) > 0) {
+        echo "STREAM FILE custom/" . basename($temp_file, '.wav') . " \"\"\n";
+        $result = fgets(STDIN);
         unlink($temp_file);
         return true;
     }
 
+    agi_log("ERROR: TTS completely failed");
     return false;
 }
 

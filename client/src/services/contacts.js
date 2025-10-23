@@ -37,15 +37,35 @@ export const contactsAPI = {
     return response.data;
   },
 
-  // Import contacts (alias for bulk)
-  importContacts: async (contactsData) => {
-    const response = await api.post('/contacts/import', contactsData);
+  // Import contacts from CSV file
+  importContacts: async (formData) => {
+    const response = await api.post('/contacts/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 
   // Get contact statistics
   getContactStats: async () => {
     const response = await api.get('/contacts/stats');
+    return response.data;
+  },
+
+  // Bulk import from CSV file
+  bulkImport: async (formData) => {
+    const response = await api.post('/contacts/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  // Bulk delete contacts
+  bulkDelete: async (contactIds) => {
+    const response = await api.post('/contacts/bulk-delete', { contactIds });
     return response.data;
   },
 };

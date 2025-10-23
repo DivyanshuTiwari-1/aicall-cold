@@ -92,12 +92,52 @@ class AiDialerStasisApp {
     async handleChannelDestroyed(event, channel) {
         const callInfo = this.activeCalls.get(channel.id);
         if (callInfo) {
-            logger.info(`AI call ended: ${callInfo.callId}, Duration: ${Date.now() - callInfo.startTime.getTime()}ms`);
+            const durationMs = Date.now() - callInfo.startTime.getTime();
+            const durationSeconds = Math.floor(durationMs / 1000);
 
-            // Log call end to database
+            logger.info(`AI call ended: ${callInfo.callId}, Duration: ${durationSeconds}s`);
+
+            // Calculate cost
+            const TELNYX_RATE_PER_MINUTE = 0.011;
+            const callCost = (durationSeconds / 60) * TELNYX_RATE_PER_MINUTE;
+
+            // Determine outcome from hangup cause
+            let outcome = 'completed';
+            const cause = event.cause || event.cause_txt || '';
+
+            if (cause.includes('NO_ANSWER') || cause.includes('NO ANSWER')) {
+                outcome = 'no_answer';
+            } else if (cause.includes('BUSY')) {
+                outcome = 'busy';
+            } else if (cause.includes('NORMAL') || durationSeconds > 30) {
+                outcome = 'completed';
+            }
+
+            // Update call status directly in database
+            try {
+                const { query } = require('../../config/database');
+                await query(`
+                    UPDATE calls
+                    SET
+                        status = 'completed',
+                        outcome = $1,
+                        duration = $2,
+                        cost = $3,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $4 AND status != 'completed'
+                `, [outcome, durationSeconds, callCost, callInfo.callId]);
+
+                logger.info(`✅ Call ${callInfo.callId} marked as completed with outcome: ${outcome}`);
+            } catch (dbError) {
+                logger.error(`Failed to update call status for ${callInfo.callId}:`, dbError);
+            }
+
+            // Log call end event
             await this.logCallEvent(callInfo.callId, 'ai_call_ended', {
-                duration: Date.now() - callInfo.startTime.getTime(),
-                reason: event.cause || 'normal',
+                duration: durationSeconds,
+                durationMs: durationMs,
+                reason: cause || 'normal',
+                outcome: outcome,
                 channelId: channel.id
             });
 
@@ -176,4 +216,3 @@ class AiDialerStasisApp {
 }
 
 module.exports = AiDialerStasisApp;
-

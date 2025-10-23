@@ -11,6 +11,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import AgentDashboard from './pages/AgentDashboard';
+import AgentNumberAssignment from './pages/AgentNumberAssignment';
 import AIIntelligence from './pages/AIIntelligence';
 import Analytics from './pages/Analytics';
 import Billing from './pages/Billing';
@@ -26,6 +27,7 @@ import LeadAssignment from './pages/LeadAssignment';
 import LiveMonitor from './pages/LiveMonitor';
 import Login from './pages/Login';
 import ManagerDashboard from './pages/ManagerDashboard';
+import PhoneNumbersManagement from './pages/PhoneNumbersManagement';
 import Register from './pages/Register';
 import Scripts from './pages/Scripts';
 import Settings from './pages/Settings';
@@ -137,6 +139,8 @@ function App() {
                 <Route path='scripts' element={<Scripts />} />
                 <Route path='settings' element={<Settings />} />
                 <Route path='users' element={<UserManagement />} />
+                <Route path='phone-numbers' element={<PhoneNumbersManagement />} />
+                <Route path='agent-assignments' element={<AgentNumberAssignment />} />
               </Route>
 
               {/* Catch all route */}

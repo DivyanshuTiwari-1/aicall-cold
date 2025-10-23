@@ -5,15 +5,14 @@ import {
     ClockIcon,
     EyeIcon,
     MagnifyingGlassIcon,
-    PhoneIcon,
-    XCircleIcon
+    PhoneIcon
 } from '@heroicons/react/24/outline';
-import React, { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
+import CallConversationModal from '../components/CallConversationModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { aiIntelligenceAPI } from '../services/aiIntelligence';
 import { callsAPI } from '../services/calls';
 
 const Calls = () => {
@@ -44,19 +43,6 @@ const Calls = () => {
     refetchInterval: 60000,
   });
 
-  // Fetch call details with AI analysis
-  const { data: callDetails, isLoading: detailsLoading } = useQuery({
-    queryKey: ['call-details', selectedCall?.id],
-    queryFn: () => callsAPI.getCallDetails(selectedCall.id),
-    enabled: !!selectedCall && showCallDetails,
-  });
-
-  // Fetch AI analysis for call
-  const { data: aiAnalysis, isLoading: analysisLoading } = useQuery({
-    queryKey: ['call-analysis', selectedCall?.id],
-    queryFn: () => aiIntelligenceAPI.getCallAnalysis(selectedCall.id),
-    enabled: !!selectedCall && showCallDetails,
-  });
 
   // Set up WebSocket listeners for real-time updates
   useEffect(() => {
@@ -292,6 +278,24 @@ const Calls = () => {
         </div>
       </div>
 
+      {/* Info Banner */}
+      {calls.length > 0 && (
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-blue-700">
+                <span className="font-medium">Tip:</span> Click the <strong>View</strong> button in the "Conversation" column to see the full chat transcript and AI insights for each call.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Call History Table */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <div className="px-4 py-5 sm:p-6">
@@ -331,7 +335,7 @@ const Calls = () => {
                       Date
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
+                      Conversation
                     </th>
                   </tr>
                 </thead>
@@ -341,23 +345,23 @@ const Calls = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
-                              <span className="text-sm font-medium text-gray-700">
-                                {call.contact?.firstName?.charAt(0) || '?'}
-                                {call.contact?.lastName?.charAt(0) || '?'}
+                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-sm">
+                              <span className="text-sm font-semibold text-white">
+                                {call.contactName?.split(' ')[0]?.charAt(0) || '?'}
+                                {call.contactName?.split(' ')[1]?.charAt(0) || ''}
                               </span>
                             </div>
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {call.contact?.firstName} {call.contact?.lastName}
+                              {call.contactName || 'Unknown'}
                             </div>
-                            <div className="text-sm text-gray-500">{call.contact?.phone}</div>
+                            <div className="text-sm text-gray-500">{call.phone || '-'}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {call.campaign?.name || '-'}
+                        {call.campaignName || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {call.duration ? formatDuration(call.duration) : '-'}
@@ -373,7 +377,7 @@ const Calls = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {call.csat ? (
+                        {call.csatScore ? (
                           <div className="flex items-center">
                             <svg
                               className="h-4 w-4 text-orange-500 mr-1"
@@ -382,7 +386,7 @@ const Calls = () => {
                             >
                               <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                             </svg>
-                            <span className="text-orange-600 font-medium">{call.csat}</span>
+                            <span className="text-orange-600 font-medium">{call.csatScore}</span>
                           </div>
                         ) : (
                           <span className="text-gray-400">-</span>
@@ -394,9 +398,11 @@ const Calls = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => handleViewDetails(call)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                          title="View conversation"
                         >
-                          <EyeIcon className="h-4 w-4" />
+                          <EyeIcon className="h-4 w-4 mr-1" />
+                          {call.transcript || call.duration > 0 ? 'View' : 'Details'}
                         </button>
                       </td>
                     </tr>
@@ -408,102 +414,15 @@ const Calls = () => {
         </div>
       </div>
 
-      {/* Call Details Modal */}
-      {showCallDetails && selectedCall && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            <div
-              className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
-              onClick={() => setShowCallDetails(false)}
-            />
-
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Call Details - {selectedCall.contact?.firstName} {selectedCall.contact?.lastName}
-                  </h3>
-                  <button
-                    onClick={() => setShowCallDetails(false)}
-                    className="text-gray-400 hover:text-gray-500"
-                  >
-                    <XCircleIcon className="h-6 w-6" />
-                  </button>
-                </div>
-
-                {detailsLoading || analysisLoading ? (
-                  <div className="text-center py-8">
-                    <LoadingSpinner size="lg" />
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Call Information */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">Call Information</h4>
-                        <div className="space-y-2 text-sm">
-                          <div><span className="font-medium">Duration:</span> {callDetails?.duration ? formatDuration(callDetails.duration) : '-'}</div>
-                          <div><span className="font-medium">Outcome:</span> {callDetails?.outcome || '-'}</div>
-                          <div><span className="font-medium">CSAT:</span> {callDetails?.csat || '-'}</div>
-                          <div><span className="font-medium">Date:</span> {new Date(callDetails?.createdAt).toLocaleString()}</div>
-                        </div>
-                      </div>
-
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">AI Analysis</h4>
-                        <div className="space-y-2 text-sm">
-                          <div><span className="font-medium">Emotion:</span> {aiAnalysis?.emotion || '-'}</div>
-                          <div><span className="font-medium">Intent:</span> {aiAnalysis?.intent || '-'}</div>
-                          <div><span className="font-medium">Confidence:</span> {aiAnalysis?.confidence ? `${aiAnalysis.confidence}%` : '-'}</div>
-                          <div><span className="font-medium">Sentiment:</span> {aiAnalysis?.sentiment || '-'}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Transcript */}
-                    {callDetails?.transcript && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">Transcript</h4>
-                        <div className="bg-gray-50 p-4 rounded-lg max-h-64 overflow-y-auto">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{callDetails.transcript}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* AI Highlights */}
-                    {aiAnalysis?.highlights && aiAnalysis.highlights.length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">Key Highlights</h4>
-                        <div className="space-y-2">
-                          {aiAnalysis.highlights.map((highlight, index) => (
-                            <div key={index} className="bg-blue-50 p-3 rounded-lg">
-                              <p className="text-sm text-blue-800">{highlight}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Objections */}
-                    {aiAnalysis?.objections && aiAnalysis.objections.length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">Objections Detected</h4>
-                        <div className="space-y-2">
-                          {aiAnalysis.objections.map((objection, index) => (
-                            <div key={index} className="bg-red-50 p-3 rounded-lg">
-                              <p className="text-sm text-red-800">{objection}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Call Conversation Modal */}
+      <CallConversationModal
+        call={selectedCall}
+        isOpen={showCallDetails}
+        onClose={() => {
+          setShowCallDetails(false);
+          setSelectedCall(null);
+        }}
+      />
     </div>
   );
 };

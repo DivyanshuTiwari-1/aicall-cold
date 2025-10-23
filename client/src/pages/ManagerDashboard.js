@@ -13,11 +13,12 @@ import { usersAPI } from '../services/users';
 
 const ManagerDashboard = () => {
   const { user } = useAuth();
+  const [dateRange, setDateRange] = React.useState('7d');
 
   // Fetch team performance data
   const { data: teamData, isLoading: teamLoading } = useQuery({
-    queryKey: ['team-performance'],
-    queryFn: () => analyticsAPI.getTeamPerformance('7d'),
+    queryKey: ['team-performance', dateRange],
+    queryFn: () => analyticsAPI.getProductivity(dateRange),
     refetchInterval: 30000,
   });
 
@@ -37,18 +38,19 @@ const ManagerDashboard = () => {
 
   if (teamLoading || usersLoading) return <LoadingSpinner />;
 
-  const teamStats = teamData?.data || {
-    totalCalls: 0,
-    completedCalls: 0,
-    conversionRate: 0,
-    avgCallDuration: 0,
-    teamSize: 0,
-    activeAgents: 0
+  const productivity = teamData?.productivity || {};
+  const teamStats = {
+    totalCalls: productivity.total_calls_made || 0,
+    completedCalls: productivity.total_calls_answered || 0,
+    conversionRate: productivity.overallConversionRate || 0,
+    avgCallDuration: productivity.avgTalkTimeMinutes || 0,
+    teamSize: users.filter(u => u.roleType === 'agent').length,
+    activeAgents: productivity.active_agents || 0
   };
 
   const users = usersData?.users || [];
   const agents = users.filter(u => u.roleType === 'agent');
-  const liveCalls = liveCallsData?.calls || [];
+  const liveCalls = liveCallsData?.liveCalls || [];
 
   const stats = [
     {
@@ -97,8 +99,19 @@ const ManagerDashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Manager Dashboard</h1>
           <p className="text-gray-600">Monitor your team's performance and activity</p>
         </div>
-        <div className="text-sm text-gray-500">
-          Last updated: {new Date().toLocaleTimeString()}
+        <div className='flex items-center space-x-3'>
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className='px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+          >
+            <option value='1d'>Today</option>
+            <option value='7d'>Last 7 Days</option>
+            <option value='30d'>Last 30 Days</option>
+          </select>
+          <div className="text-sm text-gray-500">
+            Updated: {new Date().toLocaleTimeString()}
+          </div>
         </div>
       </div>
 

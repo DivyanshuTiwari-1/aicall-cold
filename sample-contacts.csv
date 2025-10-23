@@ -1,0 +1,6 @@
+first_name,last_name,phone,email,company,title
+John,Doe,+15551234567,john.doe@example.com,Acme Corp,Sales Manager
+Jane,Smith,+15559876543,jane.smith@example.com,Tech Solutions,Software Engineer
+Bob,Johnson,+15555551234,bob.johnson@example.com,Marketing Inc,Marketing Director
+Alice,Williams,+15555559876,alice.williams@example.com,Finance Group,Financial Analyst
+Charlie,Brown,+15555555555,charlie.brown@example.com,Consulting LLC,Senior Consultant

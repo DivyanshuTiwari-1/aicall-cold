@@ -79,11 +79,13 @@ router.post('/start', authenticateToken, requireRole('agent', 'admin', 'manager'
         }
 
         // Create call record with initial cost calculation
+        // Telnyx rates: $0.011/min for calls + ~$0.003 for TTS per 5-min call
+        const INITIAL_COST = 0.014; // Estimated initial cost
         const result = await query(`
       INSERT INTO calls (organization_id, campaign_id, contact_id, status, cost)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
-    `, [req.organizationId, campaign_id, contact_id, 'initiated', 0.0045]); // $0.0045 per 5 minutes base cost
+    `, [req.organizationId, campaign_id, contact_id, 'initiated', INITIAL_COST]);
 
         const call = result.rows[0];
 
@@ -173,10 +175,15 @@ router.post('/complete/:call_id', authenticateToken, requireRole('agent', 'admin
         }
 
         // Calculate cost based on duration (if provided)
-        let calculatedCost = 0.0045; // Base cost
+        const TELNYX_RATE_PER_MINUTE = 0.011;
+        const TELNYX_TTS_RATE_PER_CHAR = 0.000003;
+
+        let calculatedCost = 0.014; // Base cost estimate
         if (callData.duration) {
-            // $0.0045 per 5 minutes, so $0.0009 per minute
-            calculatedCost = (callData.duration / 60) * 0.0009;
+            const durationMinutes = callData.duration / 60;
+            const callCost = durationMinutes * TELNYX_RATE_PER_MINUTE;
+            const ttsCost = (durationMinutes * 200) * TELNYX_TTS_RATE_PER_CHAR; // ~200 chars/min
+            calculatedCost = callCost + ttsCost;
         }
 
         // Update call with completion data
@@ -512,9 +519,15 @@ router.put('/:id/status', authenticateToken, requireRole('agent', 'admin', 'mana
         }
 
         // Calculate cost based on current duration
-        let calculatedCost = 0.0045; // Base cost
+        const TELNYX_RATE_PER_MINUTE = 0.011;
+        const TELNYX_TTS_RATE_PER_CHAR = 0.000003;
+
+        let calculatedCost = 0.014; // Base cost estimate
         if (duration) {
-            calculatedCost = (duration / 60) * 0.0009;
+            const durationMinutes = duration / 60;
+            const callCost = durationMinutes * TELNYX_RATE_PER_MINUTE;
+            const ttsCost = (durationMinutes * 200) * TELNYX_TTS_RATE_PER_CHAR;
+            calculatedCost = callCost + ttsCost;
         }
 
         // Update call status and real-time data
@@ -825,9 +838,8 @@ router.get('/queue/status/:campaignId', authenticateToken, requireRole('admin', 
 
         // Get queue status from the queue service
         try {
-            const { AutomatedCallQueue } = require('../services/queue');
-            const queue = new AutomatedCallQueue();
-            const status = await queue.getQueueStatus(campaignId);
+            const { callQueue } = require('../services/queue');
+            const status = callQueue.getQueueStatus(campaignId);
 
             res.json({
                 success: true,

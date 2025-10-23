@@ -108,10 +108,38 @@ router.post('/process', async(req, res) => {
             if (knowledgeConfidence > response.confidence) {
                 response.answer = bestMatch.answer;
                 response.confidence = knowledgeConfidence;
-                response.should_fallback = knowledgeConfidence < 0.7;
+                response.should_fallback = knowledgeConfidence < 0.5;
                 response.category = bestMatch.category;
                 response.source = 'knowledge_base';
             }
+        }
+
+        // Add contact personalization
+        if (call.first_name) {
+            // Replace generic greetings with personalized ones
+            response.answer = response.answer.replace(/\bHello\b/g, `Hello ${call.first_name}`);
+            response.answer = response.answer.replace(/\bHi\b/g, `Hi ${call.first_name}`);
+        }
+
+        // Ensure minimum response quality
+        if (response.confidence < 0.3 && !response.should_fallback) {
+            response.should_fallback = true;
+            response.suggested_actions = response.suggested_actions || [];
+            response.suggested_actions.push('transfer_to_human');
+        }
+
+        // Handle frustrated or angry emotions
+        if (emotionAnalysis.emotion === 'frustrated' || emotionAnalysis.emotion === 'angry') {
+            response.suggested_actions = response.suggested_actions || [];
+            response.suggested_actions.push('transfer_to_human');
+            const name = call.first_name || '';
+            response.answer = `I understand this is important to you${name ? ', ' + name : ''}. Let me connect you with someone who can help right away.`;
+            response.should_fallback = true;
+        }
+
+        // Add company context if available
+        if (call.company) {
+            response.answer = response.answer.replace(/your company/gi, call.company);
         }
 
         // Add real-time objection handling suggestions

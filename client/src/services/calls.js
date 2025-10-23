@@ -55,6 +55,18 @@ export const callsAPI = {
     return response.data;
   },
 
+  // Get call stats (alias for getCampaignStats)
+  getCallStats: async (params = {}) => {
+    const response = await api.get('/calls/campaign-stats', { params });
+    return response.data;
+  },
+
+  // Get call details
+  getCallDetails: async (callId) => {
+    const response = await api.get(`/calls/${callId}`);
+    return response.data;
+  },
+
   // Get automated call queue status
   getQueueStatus: async (campaignId) => {
     const response = await api.get(`/calls/queue/status/${campaignId}`);

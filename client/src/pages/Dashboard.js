@@ -16,14 +16,15 @@ const Dashboard = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { addListener, isConnected } = useWebSocket();
+  const [dateRange, setDateRange] = React.useState('7d');
 
   const {
     data: analytics,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['dashboard-analytics'],
-    queryFn: () => analyticsAPI.getDashboard('7d'),
+    queryKey: ['dashboard-analytics', dateRange],
+    queryFn: () => analyticsAPI.getDashboard(dateRange),
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
@@ -80,6 +81,25 @@ const Dashboard = () => {
 
   return (
     <div className='space-y-6'>
+      {/* Header */}
+      <div className='flex items-center justify-between mb-6'>
+        <div>
+          <h1 className='text-2xl font-bold text-gray-900'>Dashboard</h1>
+          <p className='text-sm text-gray-600 mt-1'>Overview of your organization's performance</p>
+        </div>
+        <div className='flex items-center space-x-3'>
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className='px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+          >
+            <option value='1d'>Today</option>
+            <option value='7d'>Last 7 Days</option>
+            <option value='30d'>Last 30 Days</option>
+          </select>
+        </div>
+      </div>
+
       {/* Main Stats Grid */}
       <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6'>
         {[
@@ -214,16 +234,16 @@ const Dashboard = () => {
               <div className='flex items-center space-x-4'>
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    call.status === 'scheduled' || call.status === 'fit'
+                    call.outcome === 'scheduled' || call.outcome === 'interested'
                       ? 'bg-green-100'
-                      : call.status === 'connected'
+                      : call.outcome === 'in_progress'
                         ? 'bg-yellow-100'
                         : 'bg-gray-100'
                   }`}
                 >
-                  {call.status === 'scheduled' || call.status === 'fit' ? (
+                  {call.outcome === 'scheduled' || call.outcome === 'interested' ? (
                     <CheckCircleIcon className='h-5 w-5 text-green-600' />
-                  ) : call.status === 'connected' ? (
+                  ) : call.outcome === 'in_progress' ? (
                     <div className='w-2 h-2 bg-yellow-500 rounded-full'></div>
                   ) : (
                     <CheckCircleIcon className='h-5 w-5 text-gray-600' />
@@ -231,7 +251,9 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <p className='font-medium text-gray-900'>{call.name}</p>
-                  <p className='text-sm text-gray-500'>{call.date}</p>
+                  <p className='text-sm text-gray-500'>
+                    {call.timestamp ? new Date(call.timestamp).toLocaleString() : 'N/A'}
+                  </p>
                 </div>
               </div>
               <div className='flex items-center space-x-4'>
@@ -240,26 +262,26 @@ const Dashboard = () => {
                     call.emotion === 'interested'
                       ? 'bg-green-100 text-green-800'
                       : call.emotion === 'positive'
-                        ? 'bg-gray-100 text-gray-800'
+                        ? 'bg-blue-100 text-blue-800'
                         : call.emotion === 'neutral'
                           ? 'bg-gray-100 text-gray-800'
                           : 'bg-yellow-100 text-yellow-800'
                   }`}
                 >
-                  {call.emotion}
+                  {call.emotion || 'neutral'}
                 </span>
                 <span
                   className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    call.status === 'scheduled' || call.status === 'fit'
+                    call.outcome === 'scheduled' || call.outcome === 'interested'
                       ? 'bg-green-100 text-green-800'
-                      : call.status === 'connected'
+                      : call.outcome === 'in_progress'
                         ? 'bg-yellow-100 text-yellow-800'
                         : 'bg-gray-100 text-gray-800'
                   }`}
                 >
-                  {call.status}
+                  {call.outcome || 'completed'}
                 </span>
-                {call.csat && <p className='text-sm text-gray-600'>CSAT: {call.csat}/5</p>}
+                {call.csat && <p className='text-sm text-gray-600'>CSAT: {call.csat.toFixed(1)}/5</p>}
               </div>
             </div>
           ))}

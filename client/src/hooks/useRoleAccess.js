@@ -34,6 +34,7 @@ export const useRoleAccess = () => {
         compliance: ['read', 'write', 'delete'],
         live_monitor: ['read'],
         ai_intelligence: ['read', 'write'],
+        phone_numbers: ['read', 'write', 'delete', 'assign'],
       },
       manager: {
         users: ['read'],
@@ -97,6 +98,8 @@ export const useRoleAccess = () => {
       compliance: ['admin', 'manager'],
       analytics: ['admin', 'manager', 'agent'],
       billing: ['admin', 'manager'],
+      'phone-numbers': ['admin'],
+      'agent-assignments': ['admin'],
       scripts: ['admin', 'manager', 'agent'],
       settings: ['admin', 'manager', 'agent'],
     };
@@ -129,6 +132,8 @@ export const useRoleAccess = () => {
       view_live_calls: ['admin', 'manager', 'agent'],
       manage_scripts: ['admin', 'manager'],
       manage_knowledge: ['admin', 'manager'],
+      manage_phone_numbers: ['admin'],
+      assign_phone_numbers: ['admin'],
     };
 
     const allowedRoles = actionPermissions[action];

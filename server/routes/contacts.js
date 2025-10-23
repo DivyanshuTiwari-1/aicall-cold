@@ -1,10 +1,28 @@
 const express = require('express');
 const Joi = require('joi');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({
+    dest: 'uploads/',
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only CSV files are allowed'));
+        }
+    }
+});
 
 // Validation schemas
 const contactSchema = Joi.object({
@@ -233,29 +251,85 @@ router.post('/bulk', authenticateToken, async(req, res) => {
     }
 });
 
-// Import contacts (alias for bulk)
-router.post('/import', authenticateToken, async(req, res) => {
+// Import contacts from CSV file
+router.post('/import', authenticateToken, upload.single('file'), async(req, res) => {
+    let filePath = null;
+
     try {
-        const { error, value } = bulkContactSchema.validate(req.body);
-        if (error) {
+        // Check if file was uploaded
+        if (!req.file) {
             return res.status(400).json({
                 success: false,
-                message: 'Validation error',
-                errors: error.details.map(d => d.message)
+                message: 'No file uploaded'
             });
         }
 
-        const { campaign_id, contacts } = value;
+        // Get campaign ID from form data
+        const campaignId = req.body.campaignId;
+
+        if (!campaignId) {
+            // Clean up uploaded file
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                success: false,
+                message: 'Campaign ID is required'
+            });
+        }
 
         // Verify campaign belongs to organization
         const campaignCheck = await query(
-            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2', [campaign_id, req.organizationId]
+            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [campaignId, req.organizationId]
         );
 
         if (campaignCheck.rows.length === 0) {
+            // Clean up uploaded file
+            fs.unlinkSync(req.file.path);
             return res.status(404).json({
                 success: false,
                 message: 'Campaign not found'
+            });
+        }
+
+        filePath = req.file.path;
+        const contacts = [];
+
+        // Parse CSV file
+        await new Promise((resolve, reject) => {
+            fs.createReadStream(filePath)
+                .pipe(csv({
+                    mapHeaders: ({ header }) => header.toLowerCase().trim()
+                }))
+                .on('data', (row) => {
+                    // Normalize the row data
+                    const contact = {
+                        first_name: row.first_name || row.firstname || row['first name'] || '',
+                        last_name: row.last_name || row.lastname || row['last name'] || '',
+                        phone: row.phone || row.phone_number || row['phone number'] || '',
+                        email: row.email || row.email_address || row['email address'] || '',
+                        company: row.company || row.organization || '',
+                        title: row.title || row.job_title || row['job title'] || '',
+                        industry: row.industry || '',
+                        location: row.location || row.city || '',
+                    };
+
+                    // Only add if we have at least first_name and phone
+                    if (contact.first_name && contact.phone) {
+                        contacts.push(contact);
+                    }
+                })
+                .on('end', resolve)
+                .on('error', reject);
+        });
+
+        // Clean up the uploaded file
+        fs.unlinkSync(filePath);
+        filePath = null;
+
+        if (contacts.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid contacts found in CSV file. Please ensure the file has first_name and phone columns.'
             });
         }
 
@@ -265,12 +339,26 @@ router.post('/import', authenticateToken, async(req, res) => {
             errors: []
         };
 
-        // Process contacts in batches
+        // Process contacts
         for (const contactData of contacts) {
             try {
+                // Validate phone number format (basic validation)
+                const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+                if (!phoneRegex.test(contactData.phone.replace(/[\s\-\(\)]/g, ''))) {
+                    results.errors.push({
+                        contact: contactData,
+                        error: 'Invalid phone number format'
+                    });
+                    continue;
+                }
+
+                // Normalize phone number (remove spaces, dashes, parentheses)
+                const normalizedPhone = contactData.phone.replace(/[\s\-\(\)]/g, '');
+
                 // Check if contact already exists
                 const existingContact = await query(
-                    'SELECT id FROM contacts WHERE campaign_id = $1 AND phone = $2', [campaign_id, contactData.phone]
+                    'SELECT id FROM contacts WHERE campaign_id = $1 AND phone = $2',
+                    [campaignId, normalizedPhone]
                 );
 
                 if (existingContact.rows.length > 0) {
@@ -279,23 +367,23 @@ router.post('/import', authenticateToken, async(req, res) => {
                 }
 
                 await query(`
-          INSERT INTO contacts (
-            organization_id, campaign_id, first_name, last_name, phone, email,
-            company, title, industry, location, custom_fields
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        `, [
+                    INSERT INTO contacts (
+                        organization_id, campaign_id, first_name, last_name, phone, email,
+                        company, title, industry, location, custom_fields
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                `, [
                     req.organizationId,
-                    campaign_id,
+                    campaignId,
                     contactData.first_name,
-                    contactData.last_name,
-                    contactData.phone,
-                    contactData.email,
-                    contactData.company,
-                    contactData.title,
-                    contactData.industry,
-                    contactData.location,
-                    JSON.stringify(contactData.custom_fields || {})
+                    contactData.last_name || null,
+                    normalizedPhone,
+                    contactData.email || null,
+                    contactData.company || null,
+                    contactData.title || null,
+                    contactData.industry || null,
+                    contactData.location || null,
+                    JSON.stringify({})
                 ]);
 
                 results.created++;
@@ -307,19 +395,24 @@ router.post('/import', authenticateToken, async(req, res) => {
             }
         }
 
-        logger.info(`Bulk contact import: ${results.created} created, ${results.skipped} skipped, ${results.errors.length} errors`);
+        logger.info(`CSV contact import: ${results.created} created, ${results.skipped} skipped, ${results.errors.length} errors`);
 
         res.json({
             success: true,
-            message: 'Bulk import completed',
+            message: 'CSV import completed',
             results
         });
 
     } catch (error) {
-        logger.error('Bulk contact import error:', error);
+        // Clean up uploaded file if it still exists
+        if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+
+        logger.error('CSV contact import error:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to process bulk import'
+            message: error.message || 'Failed to process CSV import'
         });
     }
 });
@@ -648,6 +741,43 @@ router.delete('/:id', authenticateToken, async(req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to delete contact'
+        });
+    }
+});
+
+// Bulk delete contacts
+router.post('/bulk-delete', authenticateToken, async(req, res) => {
+    try {
+        const { contactIds } = req.body;
+
+        if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No contact IDs provided'
+            });
+        }
+
+        // Delete contacts that belong to the user's organization
+        const result = await query(
+            'DELETE FROM contacts WHERE id = ANY($1) AND organization_id = $2 RETURNING id',
+            [contactIds, req.organizationId]
+        );
+
+        const deletedCount = result.rowCount;
+
+        logger.info(`Bulk deleted ${deletedCount} contacts by user ${req.user.id}`);
+
+        res.json({
+            success: true,
+            message: `Successfully deleted ${deletedCount} contacts`,
+            deletedCount
+        });
+
+    } catch (error) {
+        logger.error('Bulk contact deletion error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete contacts'
         });
     }
 });

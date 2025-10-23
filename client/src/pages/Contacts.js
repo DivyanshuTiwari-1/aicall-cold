@@ -16,8 +16,10 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import AddContactModal from '../components/AddContactModal';
 import LoadingSpinner from '../components/LoadingSpinner';
+import SimpleBrowserPhone from '../components/SimpleBrowserPhone';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { campaignsAPI } from '../services/campaigns';
 import { contactsAPI } from '../services/contacts';
 
 const Contacts = () => {
@@ -27,6 +29,8 @@ const Contacts = () => {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedCampaign, setSelectedCampaign] = useState('');
+  const [callingContact, setCallingContact] = useState(null);
   const [filters, setFilters] = useState({
     search: '',
     campaign: '',
@@ -50,15 +54,35 @@ const Contacts = () => {
     refetchInterval: 60000,
   });
 
+  // Fetch campaigns for import modal
+  const { data: campaignsData } = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: () => campaignsAPI.getCampaigns(),
+    refetchInterval: 60000,
+  });
+
   // Bulk import mutation
   const bulkImportMutation = useMutation({
-    mutationFn: (file) => contactsAPI.bulkImport(file),
+    mutationFn: (formData) => contactsAPI.bulkImport(formData),
     onSuccess: (response) => {
-      toast.success(`Successfully imported ${response.importedCount} contacts`);
+      const importedCount = response.results?.created || 0;
+      const skippedCount = response.results?.skipped || 0;
+      const errorCount = response.results?.errors?.length || 0;
+
+      let message = `Successfully imported ${importedCount} contacts`;
+      if (skippedCount > 0) {
+        message += `, ${skippedCount} skipped (duplicates)`;
+      }
+      if (errorCount > 0) {
+        message += `, ${errorCount} errors`;
+      }
+
+      toast.success(message);
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['contact-stats'] });
       setIsUploadModalOpen(false);
       setSelectedFile(null);
+      setSelectedCampaign('');
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to import contacts');
@@ -129,8 +153,14 @@ const Contacts = () => {
       return;
     }
 
+    if (!selectedCampaign) {
+      toast.error('Please select a campaign');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('campaignId', selectedCampaign);
     bulkImportMutation.mutate(formData);
   };
 
@@ -185,6 +215,7 @@ const Contacts = () => {
 
   const contacts = contactsData?.contacts || [];
   const stats = statsData?.stats || {};
+  const campaigns = campaignsData?.campaigns || [];
 
   if (isLoading || statsLoading) return <LoadingSpinner />;
   if (error)
@@ -460,6 +491,13 @@ const Contacts = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
+                            onClick={() => setCallingContact(contact)}
+                            className="text-green-600 hover:text-green-900"
+                            title="Call Contact"
+                          >
+                            <PhoneIcon className="h-4 w-4" />
+                          </button>
+                          <button
                             onClick={() => {/* View contact details */}}
                             className="text-blue-600 hover:text-blue-900"
                             title="View Details"
@@ -515,7 +553,28 @@ const Contacts = () => {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select CSV File
+                      Select Campaign <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedCampaign}
+                      onChange={(e) => setSelectedCampaign(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">-- Select a Campaign --</option>
+                      {campaigns.map((campaign) => (
+                        <option key={campaign.id} value={campaign.id}>
+                          {campaign.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Contacts will be imported to the selected campaign
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select CSV File <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="file"
@@ -524,7 +583,7 @@ const Contacts = () => {
                       className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     />
                     <p className="mt-1 text-sm text-gray-500">
-                      CSV should contain columns: firstName, lastName, phone, email, company
+                      CSV should contain columns: first_name, last_name, phone, email, company
                     </p>
                   </div>
 
@@ -546,7 +605,7 @@ const Contacts = () => {
                   </button>
                   <button
                     onClick={handleBulkImport}
-                    disabled={!selectedFile || bulkImportMutation.isLoading}
+                    disabled={!selectedFile || !selectedCampaign || bulkImportMutation.isLoading}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
                     {bulkImportMutation.isLoading ? 'Importing...' : 'Import Contacts'}
@@ -563,6 +622,16 @@ const Contacts = () => {
         isOpen={isAddContactModalOpen}
         onClose={() => setIsAddContactModalOpen(false)}
       />
+
+      {/* Browser Phone Modal */}
+      {callingContact && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <SimpleBrowserPhone
+            contact={callingContact}
+            onClose={() => setCallingContact(null)}
+          />
+        </div>
+      )}
     </div>
   );
 };

@@ -166,20 +166,19 @@ class AutomatedCallQueue {
         try {
             const { startOutboundCall } = require('./telephony');
 
-            const callResult = await startOutboundCall({
-                callId: `auto_${Date.now()}_${contact.id}`,
-                organizationId: contact.organization_id,
-                campaignId: campaignId,
-                contactId: contact.id,
-                toPhone: contact.phone,
-                automated: true
-            });
+            // Generate unique call ID
+            const callId = `auto_${Date.now()}_${contact.id}`;
 
-            // Log the call initiation
-            await query(`
-                INSERT INTO calls (organization_id, campaign_id, contact_id, status, cost, automated)
-                VALUES ($1, $2, $3, $4, $5, $6)
+            // Create call record BEFORE initiating to ensure it exists in database
+            const callResult = await query(`
+                INSERT INTO calls (
+                    id, organization_id, campaign_id, contact_id,
+                    status, cost, automated, created_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                RETURNING *
             `, [
+                callId,
                 contact.organization_id,
                 campaignId,
                 contact.id,
@@ -188,18 +187,56 @@ class AutomatedCallQueue {
                 true
             ]);
 
-            logger.info(`Automated call initiated for contact ${contact.id}`);
-            return callResult;
+            const call = callResult.rows[0];
+
+            // Log call initiation event
+            await query(`
+                INSERT INTO call_events (call_id, event_type, event_data)
+                VALUES ($1, $2, $3)
+            `, [call.id, 'call_initiated', JSON.stringify({
+                contact_id: contact.id,
+                contact_name: `${contact.first_name} ${contact.last_name}`,
+                contact_phone: contact.phone,
+                campaign_id: campaignId,
+                automated: true,
+                timestamp: new Date().toISOString()
+            })]);
+
+            // Now initiate the actual call via telephony provider
+            const providerResult = await startOutboundCall({
+                callId: call.id,
+                organizationId: contact.organization_id,
+                campaignId: campaignId,
+                contactId: contact.id,
+                toPhone: contact.phone,
+                automated: true
+            });
+
+            // Update contact status
+            await query(`
+                UPDATE contacts
+                SET status = 'contacted',
+                    last_contacted = CURRENT_TIMESTAMP
+                WHERE id = $1
+            `, [contact.id]);
+
+            logger.info(`✅ Automated call initiated for ${contact.first_name} ${contact.last_name} (${contact.phone}), Call ID: ${call.id}`);
+
+            return {
+                ...providerResult,
+                callId: call.id,
+                contactName: `${contact.first_name} ${contact.last_name}`
+            };
 
         } catch (error) {
-            logger.error(`Failed to initiate call for contact ${contact.id}:`, error);
+            logger.error(`❌ Failed to initiate call for contact ${contact.id} (${contact.phone}):`, error.message);
 
             // Update contact retry count
             await query(`
                 UPDATE contacts
                 SET retry_count = retry_count + 1,
                     last_contacted = CURRENT_TIMESTAMP,
-                    status = CASE WHEN retry_count >= $1 THEN 'failed' ELSE 'retry' END
+                    status = CASE WHEN retry_count + 1 >= $1 THEN 'failed' ELSE 'retry' END
                 WHERE id = $2
             `, [this.retryAttempts, contact.id]);
 
@@ -285,7 +322,7 @@ cron.schedule('*/30 * * * * *', async() => {
         for (const campaign of result.rows) {
             if (!callQueue.activeQueues.has(campaign.id)) {
                 logger.info(`Auto-starting queue for campaign ${campaign.id}`);
-                await callQueue.startQueue(campaign.id);
+                await callQueue.startQueue(null, campaign.id);
             }
         }
     } catch (error) {

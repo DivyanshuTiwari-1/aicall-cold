@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import SimpleBrowserPhone from '../components/SimpleBrowserPhone';
 import Softphone from '../components/Softphone';
 import WarmTransferManager from '../components/WarmTransferManager';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,6 +30,7 @@ const AgentDashboard = () => {
   const [callNotes, setCallNotes] = useState('');
   const [callStatus, setCallStatus] = useState('idle');
   const [currentCall, setCurrentCall] = useState(null);
+  const [callingContact, setCallingContact] = useState(null);
 
   // Fetch assigned leads
   const { data: leadsData, isLoading: leadsLoading } = useQuery({
@@ -129,13 +131,14 @@ const AgentDashboard = () => {
       return;
     }
 
-    // For manual calls, we don't need SIP extension - we use the manual call API
-    // The server will handle the actual call initiation via Asterisk
-
-    setSelectedLead(lead);
-    startCallMutation.mutate({
-      contactId: lead.contact.id,
-      campaignId: lead.contact.campaign?.id,
+    // Use browser-based calling
+    setCallingContact({
+      id: lead.contact.id,
+      firstName: lead.contact.firstName,
+      lastName: lead.contact.lastName,
+      phone: lead.contact.phone,
+      company: lead.contact.company,
+      title: lead.contact.title
     });
   };
 
@@ -496,15 +499,15 @@ const AgentDashboard = () => {
                     <div className="flex-shrink-0">
                       <div className="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center">
                         <span className="text-sm font-medium text-gray-700">
-                          {call.contact?.firstName?.charAt(0) || '?'}
+                          {call.contactName?.charAt(0) || '?'}
                         </span>
                       </div>
                     </div>
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {call.contact?.firstName} {call.contact?.lastName}
+                        {call.contactName || 'Unknown'}
                       </div>
-                      <div className="text-sm text-gray-500">{call.contact?.phone}</div>
+                      <div className="text-sm text-gray-500">{call.phone || '-'}</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
@@ -554,6 +557,21 @@ const AgentDashboard = () => {
         } : null}
         isVisible={isCalling}
       />
+
+      {/* Browser Phone Modal */}
+      {callingContact && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <SimpleBrowserPhone
+            contact={callingContact}
+            onClose={() => {
+              setCallingContact(null);
+              queryClient.invalidateQueries({ queryKey: ['my-leads'] });
+              queryClient.invalidateQueries({ queryKey: ['call-stats'] });
+              queryClient.invalidateQueries({ queryKey: ['my-calls'] });
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 };

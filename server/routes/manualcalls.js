@@ -102,13 +102,42 @@ router.post('/start', authenticateToken, requireRole('agent'), async(req, res) =
             });
         }
 
+        // Get agent's assigned phone number
+        const phoneNumberResult = await query(`
+            SELECT pn.id, pn.phone_number, pn.provider, apn.daily_limit, apn.calls_made_today
+            FROM phone_numbers pn
+            JOIN agent_phone_numbers apn ON pn.id = apn.phone_number_id
+            WHERE pn.assigned_to = $1 AND pn.organization_id = $2 AND pn.status = 'active'
+            ORDER BY apn.calls_made_today ASC
+            LIMIT 1
+        `, [req.user.id, req.organizationId]);
+
+        if (phoneNumberResult.rows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No phone number assigned to you. Please contact your administrator to assign a phone number.'
+            });
+        }
+
+        const assignedNumber = phoneNumberResult.rows[0];
+
+        // Check daily limit
+        if (assignedNumber.calls_made_today >= assignedNumber.daily_limit) {
+            return res.status(400).json({
+                success: false,
+                message: `Daily call limit reached (${assignedNumber.daily_limit} calls). Please contact your administrator.`
+            });
+        }
+
         // Create call record
+        // Telnyx rates: $0.011/min for calls
+        const INITIAL_COST = 0.014;
         const callResult = await query(`
             INSERT INTO calls (organization_id, campaign_id, contact_id, initiated_by,
-                             call_type, status, cost)
-            VALUES ($1, $2, $3, $4, 'manual', 'initiated', 0.0045)
+                             call_type, status, cost, from_number)
+            VALUES ($1, $2, $3, $4, 'manual', 'initiated', $5, $6)
             RETURNING id, created_at
-        `, [req.organizationId, contact.campaign_id || campaignId, contactId, req.user.id]);
+        `, [req.organizationId, contact.campaign_id || campaignId, contactId, req.user.id, INITIAL_COST, assignedNumber.phone_number]);
 
         const call = callResult.rows[0];
 
@@ -137,10 +166,18 @@ router.post('/start', authenticateToken, requireRole('agent'), async(req, res) =
                 agentExtension: user.sip_extension,
                 agentUserId: user.id,
                 toPhone: contact.phone,
-                contactId: contactId
+                contactId: contactId,
+                fromNumber: assignedNumber.phone_number
             });
 
-            logger.info(`Manual call initiated: ${call.id} for contact ${contactId}`);
+            // Increment daily call counter
+            await query(`
+                UPDATE agent_phone_numbers
+                SET calls_made_today = calls_made_today + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE phone_number_id = $1 AND agent_id = $2
+            `, [assignedNumber.id, req.user.id]);
+
+            logger.info(`Manual call initiated: ${call.id} for contact ${contactId} using number ${assignedNumber.phone_number}`);
 
             res.status(201).json({
                 success: true,

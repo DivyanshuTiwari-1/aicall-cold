@@ -192,4 +192,13 @@ class TTSService {
     }
 }
 
-module.exports = new TTSService();
+// Detect which TTS engine to use
+const TTS_ENGINE = process.env.TTS_ENGINE || 'espeak';
+
+if (TTS_ENGINE === 'telnyx' && process.env.TELNYX_API_KEY) {
+    logger.info('🎤 Using Telnyx TTS for professional voice quality');
+    module.exports = require('./telnyx-tts');
+} else {
+    logger.info('🎤 Using eSpeak TTS (free but robotic quality)');
+    module.exports = new TTSService();
+}

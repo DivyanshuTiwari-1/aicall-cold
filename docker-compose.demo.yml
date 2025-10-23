@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-dialer-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_dialer_prod}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_dialer_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_dialer_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-dialer-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ai-dialer-redis
+    restart: always
+    command: redis-server ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-dialer-network
+
+  # Asterisk VoIP Server
+  asterisk:
+    build:
+      context: .
+      dockerfile: Dockerfile.asterisk
+    container_name: ai-dialer-asterisk
+    restart: always
+    environment:
+      ARI_USERNAME: ${ARI_USERNAME:-ai-dialer}
+      ARI_PASSWORD: ${ARI_PASSWORD}
+    volumes:
+      - ./asterisk-config:/etc/asterisk
+      - ./asterisk-logs:/var/log/asterisk
+      - asterisk_sounds:/var/lib/asterisk/sounds
+    ports:
+      - "8088:8088"
+      - "5060:5060/udp"
+      - "10000-10100:10000-10100/udp"
+    networks:
+      - ai-dialer-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ai-dialer-backend
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/logs:/app/logs
+      - ./audio-cache:/app/audio-cache
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ai-dialer-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      asterisk:
+        condition: service_started
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${API_URL:-http://localhost:3000}
+    container_name: ai-dialer-frontend
+    restart: always
+    ports:
+      - "3001:80"
+    networks:
+      - ai-dialer-network
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  asterisk_sounds:
+    driver: local
+
+networks:
+  ai-dialer-network:
+    driver: bridge

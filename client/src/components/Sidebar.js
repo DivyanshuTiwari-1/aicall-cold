@@ -48,6 +48,8 @@ const Sidebar = ({ isOpen, onClose }) => {
     { name: 'Analytics', href: '/analytics', icon: ChartBarIcon, roles: ['admin', 'manager', 'agent'] },
     { name: 'Billing', href: '/billing', icon: CreditCardIcon, roles: ['admin', 'manager'] },
     { name: 'User Management', href: '/users', icon: UsersIcon, roles: ['admin'] },
+    { name: 'Phone Numbers', href: '/phone-numbers', icon: PhoneIcon, roles: ['admin'] },
+    { name: 'Agent Assignments', href: '/agent-assignments', icon: UserGroupIcon, roles: ['admin'] },
     { name: 'Scripts', href: '/scripts', icon: DocumentTextIcon, roles: ['admin', 'manager', 'agent'] },
     { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['admin', 'manager', 'agent'] },
   ];
