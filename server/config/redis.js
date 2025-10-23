@@ -5,7 +5,7 @@ let redisClient;
 
 async function connectRedis() {
     try {
-        redisClient = redis.createClient({
+        const redisConfig = {
             socket: {
                 host: process.env.REDIS_HOST || 'localhost',
                 port: parseInt(process.env.REDIS_PORT) || 6379,
@@ -19,7 +19,14 @@ async function connectRedis() {
                     return delay;
                 }
             }
-        });
+        };
+
+        // Add password if provided
+        if (process.env.REDIS_PASSWORD) {
+            redisConfig.password = process.env.REDIS_PASSWORD;
+        }
+
+        redisClient = redis.createClient(redisConfig);
 
         redisClient.on('error', (err) => {
             logger.error('Redis Client Error:', err);

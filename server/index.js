@@ -290,15 +290,26 @@ async function startServer() {
         await addSipFields();
         await addTranscriptField();
 
-        // Initialize Stasis applications
-        await stasisManager.initialize();
+        // Initialize Stasis applications (non-blocking - will retry if Asterisk not ready)
+        stasisManager.initialize().catch(err => {
+            logger.warn('⚠️  Asterisk not ready yet, will retry later:', err.message);
+            // Retry every 10 seconds
+            const retryInterval = setInterval(async () => {
+                try {
+                    await stasisManager.initialize();
+                    logger.info('✅ Asterisk connected successfully');
+                    clearInterval(retryInterval);
+                } catch (e) {
+                    logger.debug('Asterisk still not ready, retrying...');
+                }
+            }, 10000);
+        });
 
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
             logger.info(`🚀 AI Dialer API Server running on port ${PORT}`);
             logger.info(`📊 Health check: http://localhost:${PORT}/health`);
             logger.info(`🔌 WebSocket server ready for real-time connections`);
-            logger.info(`☎️  Stasis applications initialized for call handling`);
         });
     } catch (error) {
         logger.error('Failed to start server:', error);

@@ -10,11 +10,11 @@ const defaultHost = 'localhost'; // Always use localhost for local development
 const defaultPort = 5433; // Use 5433 for local development (Docker maps 5432->5433)
 
 const dbConfig = {
-    host: process.env.DB_HOST || defaultHost,
-    port: parseInt(process.env.DB_PORT) || defaultPort,
-    database: process.env.DB_NAME || 'ai_dialer',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres', // Use postgres password
+    host: process.env.DB_HOST || process.env.POSTGRES_HOST || defaultHost,
+    port: parseInt(process.env.DB_PORT || process.env.POSTGRES_PORT) || defaultPort,
+    database: process.env.DB_NAME || process.env.POSTGRES_DB || 'ai_dialer',
+    user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
+    password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
 };
 
 // Log database configuration for debugging
