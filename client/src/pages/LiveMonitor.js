@@ -208,12 +208,21 @@ const LiveMonitor = () => {
       </div>
 
       {/* Metrics Section */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         {/* Active Calls */}
         <MetricCard
           icon={<PhoneIcon className="h-8 w-8 text-blue-600" />}
           title="Active Calls"
           value={liveCalls.length}
+          subtitle={`${liveCalls.filter(c => c.automated).length} Auto | ${liveCalls.filter(c => !c.automated).length} Manual`}
+        />
+
+        {/* Automated Calls */}
+        <MetricCard
+          icon={<span className="text-3xl">🤖</span>}
+          title="AI Calls"
+          value={liveCalls.filter(c => c.automated).length}
+          subtitle="Automated"
         />
 
         {/* Average Duration */}
@@ -223,7 +232,7 @@ const LiveMonitor = () => {
           value={
             liveCalls.length > 0
               ? formatDuration(
-                  liveCalls.reduce((acc, c) => acc + (c.duration || 0), 0) / liveCalls.length
+                  Math.floor(liveCalls.reduce((acc, c) => acc + (c.duration || 0), 0) / liveCalls.length)
                 )
               : '0:00'
           }
@@ -233,13 +242,13 @@ const LiveMonitor = () => {
         <MetricCard
           icon={<CurrencyDollarIcon className="h-8 w-8 text-purple-600" />}
           title="Total Cost"
-          value={`₹${liveCalls.reduce((acc, c) => acc + parseFloat(c.cost || 0), 0).toFixed(2)}`}
+          value={`$${liveCalls.reduce((acc, c) => acc + parseFloat(c.cost || 0), 0).toFixed(3)}`}
         />
 
         {/* Success Rate */}
         <MetricCard
           icon={<ChartBarIcon className="h-8 w-8 text-orange-600" />}
-          title="Success Rate"
+          title="Positive Rate"
           value={`${
             liveCalls.length > 0
               ? Math.round(
@@ -275,17 +284,38 @@ const LiveMonitor = () => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-                        <PhoneIcon className="h-5 w-5 text-green-600" />
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                        call.automated ? 'bg-purple-100' : 'bg-green-100'
+                      }`}>
+                        <PhoneIcon className={`h-5 w-5 ${
+                          call.automated ? 'text-purple-600' : 'text-green-600'
+                        }`} />
                       </div>
                       <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-900">
-                          {call.contact?.firstName} {call.contact?.lastName}
-                        </p>
+                        <div className="flex items-center space-x-2">
+                          <p className="text-sm font-medium text-gray-900">
+                            {call.contact?.firstName} {call.contact?.lastName}
+                          </p>
+                          {call.automated && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                              🤖 AUTO
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-gray-500">{call.contact?.phone}</p>
+                        {call.campaign && (
+                          <p className="text-xs text-gray-400">{call.campaign.name}</p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
+                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        call.status === 'in_progress' ? 'bg-green-100 text-green-800' :
+                        call.status === 'initiated' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {call.status}
+                      </div>
                       {call.emotion && (
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEmotionColor(
@@ -295,37 +325,52 @@ const LiveMonitor = () => {
                           {call.emotion}
                         </span>
                       )}
-                      <span className="text-sm text-gray-500">{formatDuration(call.duration)}</span>
+                      <span className="text-sm font-semibold text-gray-700">{formatDuration(call.duration)}</span>
                     </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCallAction(call.id, 'completed');
-                        }}
-                        className="flex items-center px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
-                        disabled={updateCallStatusMutation.isLoading}
-                      >
-                        <CheckCircleIcon className="h-4 w-4 mr-1" /> Complete
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCallAction(call.id, 'cancelled');
-                        }}
-                        className="flex items-center px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
-                        disabled={updateCallStatusMutation.isLoading}
-                      >
-                        <StopIcon className="h-4 w-4 mr-1" /> Cancel
-                      </button>
+                      {!call.automated && (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCallAction(call.id, 'completed');
+                            }}
+                            className="flex items-center px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                            disabled={updateCallStatusMutation.isLoading}
+                          >
+                            <CheckCircleIcon className="h-4 w-4 mr-1" /> Complete
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCallAction(call.id, 'cancelled');
+                            }}
+                            className="flex items-center px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                            disabled={updateCallStatusMutation.isLoading}
+                          >
+                            <StopIcon className="h-4 w-4 mr-1" /> Cancel
+                          </button>
+                        </>
+                      )}
+                      {call.automated && (
+                        <div className="text-xs text-gray-500 italic">
+                          Automated call in progress...
+                        </div>
+                      )}
                     </div>
                     <div className="text-right">
-                      <div className="text-sm text-gray-500">Agent</div>
+                      <div className="text-sm text-gray-500">
+                        {call.automated ? 'Type' : 'Agent'}
+                      </div>
                       <div className="text-sm font-medium text-gray-900">
-                        {call.agent?.firstName} {call.agent?.lastName}
+                        {call.automated ? (
+                          <span className="text-purple-600 font-semibold">AI Agent</span>
+                        ) : (
+                          <>{call.agent?.firstName} {call.agent?.lastName}</>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -369,13 +414,14 @@ const LiveMonitor = () => {
 
 /* --- Reusable Components --- */
 
-const MetricCard = ({ icon, title, value }) => (
+const MetricCard = ({ icon, title, value, subtitle }) => (
   <div className='bg-white rounded-lg shadow-sm p-6'>
     <div className='flex items-center'>
       <div className='flex-shrink-0'>{icon}</div>
       <div className='ml-4'>
         <p className='text-sm font-medium text-gray-500'>{title}</p>
         <p className='text-2xl font-semibold text-gray-900'>{value}</p>
+        {subtitle && <p className='text-xs text-gray-400 mt-1'>{subtitle}</p>}
       </div>
     </div>
   </div>

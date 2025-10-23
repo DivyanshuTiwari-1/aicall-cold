@@ -331,24 +331,32 @@ router.get('/live-calls', authenticateToken, requireRole('manager', 'admin'), as
       SELECT
         c.id,
         c.contact_id,
+        c.campaign_id,
         c.initiated_by,
         c.status,
+        c.outcome,
+        c.emotion,
         c.created_at as started_at,
         c.call_type,
-        EXTRACT(EPOCH FROM (NOW() - c.created_at)) as duration_seconds,
+        c.automated,
+        EXTRACT(EPOCH FROM (NOW() - c.created_at))::integer as duration_seconds,
         u.first_name as agent_first_name,
         u.last_name as agent_last_name,
         u.sip_extension,
         cont.first_name as contact_first_name,
         cont.last_name as contact_last_name,
         cont.phone as contact_phone,
-        cont.company as contact_company
+        cont.company as contact_company,
+        cont.email as contact_email,
+        camp.name as campaign_name,
+        camp.type as campaign_type,
+        c.cost
       FROM calls c
-      JOIN users u ON c.initiated_by = u.id
+      LEFT JOIN users u ON c.initiated_by = u.id
       JOIN contacts cont ON c.contact_id = cont.id
+      LEFT JOIN campaigns camp ON c.campaign_id = camp.id
       WHERE c.organization_id = $1
-        AND c.status IN ('ringing', 'connected', 'in_progress')
-        AND c.call_type = 'manual'
+        AND c.status IN ('initiated', 'ringing', 'connected', 'in_progress')
       ORDER BY c.created_at DESC
     `;
 
@@ -357,8 +365,37 @@ router.get('/live-calls', authenticateToken, requireRole('manager', 'admin'), as
         res.json({
             success: true,
             liveCalls: result.rows.map(call => ({
-                ...call,
-                duration_formatted: formatDuration(call.duration_seconds)
+                id: call.id,
+                status: call.status,
+                outcome: call.outcome,
+                emotion: call.emotion,
+                duration: call.duration_seconds || 0,
+                cost: parseFloat(call.cost || 0),
+                automated: call.automated || false,
+                callType: call.call_type,
+                startedAt: call.started_at,
+                contact: {
+                    id: call.contact_id,
+                    firstName: call.contact_first_name,
+                    lastName: call.contact_last_name,
+                    phone: call.contact_phone,
+                    company: call.contact_company,
+                    email: call.contact_email
+                },
+                agent: call.agent_first_name ? {
+                    firstName: call.agent_first_name,
+                    lastName: call.agent_last_name,
+                    sipExtension: call.sip_extension
+                } : {
+                    firstName: 'AI',
+                    lastName: 'Agent',
+                    sipExtension: 'AUTO'
+                },
+                campaign: call.campaign_name ? {
+                    id: call.campaign_id,
+                    name: call.campaign_name,
+                    type: call.campaign_type
+                } : null
             }))
         });
 

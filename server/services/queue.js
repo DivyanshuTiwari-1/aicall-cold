@@ -53,7 +53,7 @@ class AutomatedCallQueue {
                     SELECT * FROM contacts
                     WHERE campaign_id = $1
                     AND status IN ('pending', 'retry', 'new')
-                    ORDER BY priority DESC, created_at ASC
+                    ORDER BY created_at ASC
                 `, [campaignId]);
                 assignedLeads = result.rows;
             }
@@ -173,7 +173,7 @@ class AutomatedCallQueue {
             const callResult = await query(`
                 INSERT INTO calls (
                     id, organization_id, campaign_id, contact_id,
-                    status, cost, automated, created_at
+                    status, cost, call_type, created_at
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
                 RETURNING *
@@ -184,7 +184,7 @@ class AutomatedCallQueue {
                 contact.id,
                 'initiated',
                 0.0045,
-                true
+                'automated'
             ]);
 
             const call = callResult.rows[0];

@@ -74,8 +74,7 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
             SELECT
                 c.*,
                 COUNT(ct.id) as contact_count,
-                COUNT(call.id) as calls_made,
-                false as automated_calls_active
+                COUNT(call.id) as calls_made
             FROM campaigns c
             LEFT JOIN contacts ct ON c.id = ct.campaign_id
             LEFT JOIN calls call ON c.id = call.campaign_id
@@ -84,7 +83,14 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
             ORDER BY c.created_at DESC
         `, params);
 
+        // Get active queue status from queue service
+        const { callQueue } = require('../services/queue');
+
         const campaigns = result.rows.map(campaign => {
+            // Check if this campaign has an active queue
+            const queueStatus = callQueue.getQueueStatus(campaign.id);
+            const isQueueActive = queueStatus && queueStatus.status === 'running';
+
             return {
                 id: campaign.id,
                 name: campaign.name,
@@ -102,7 +108,7 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
                 settings: campaign.settings || {},
                 contactCount: parseInt(campaign.contact_count),
                 callsMade: parseInt(campaign.calls_made),
-                automatedCallsActive: campaign.automated_calls_active,
+                automatedCallsActive: isQueueActive,
                 createdAt: campaign.created_at,
                 updatedAt: campaign.updated_at
             };
@@ -131,8 +137,7 @@ router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), 
             SELECT
                 c.*,
                 COUNT(ct.id) as contact_count,
-                COUNT(call.id) as calls_made,
-                false as automated_calls_active
+                COUNT(call.id) as calls_made
             FROM campaigns c
             LEFT JOIN contacts ct ON c.id = ct.campaign_id
             LEFT JOIN calls call ON c.id = call.campaign_id
@@ -148,6 +153,11 @@ router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), 
         }
 
         const campaign = result.rows[0];
+
+        // Check if this campaign has an active queue
+        const { callQueue } = require('../services/queue');
+        const queueStatus = callQueue.getQueueStatus(id);
+        const isQueueActive = queueStatus && queueStatus.status === 'running';
 
         res.json({
             success: true,
@@ -168,7 +178,7 @@ router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), 
                 settings: campaign.settings || {},
                 contactCount: parseInt(campaign.contact_count),
                 callsMade: parseInt(campaign.calls_made),
-                automatedCallsActive: campaign.automated_calls_active,
+                automatedCallsActive: isQueueActive,
                 createdAt: campaign.created_at,
                 updatedAt: campaign.updated_at
             }

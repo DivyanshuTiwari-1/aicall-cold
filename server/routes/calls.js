@@ -289,6 +289,7 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
             contact_id,
             status,
             outcome,
+            callType,
             limit = 50,
             offset = 0
         } = req.query;
@@ -321,6 +322,12 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
             params.push(outcome);
         }
 
+        if (callType) {
+            paramCount++;
+            whereClause += ` AND c.call_type = $${paramCount}`;
+            params.push(callType);
+        }
+
         const result = await query(`
       SELECT
         c.*,
@@ -347,6 +354,7 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
             company: call.company,
             status: call.status,
             outcome: call.outcome,
+            callType: call.call_type,
             duration: call.duration,
             transcript: call.transcript,
             emotion: call.emotion,

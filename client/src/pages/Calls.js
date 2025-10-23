@@ -24,6 +24,7 @@ const Calls = () => {
     campaign: '',
     outcome: '',
     emotion: '',
+    callType: '', // 'automated' or 'manual'
     dateRange: '7d',
   });
   const [selectedCall, setSelectedCall] = useState(null);
@@ -207,7 +208,7 @@ const Calls = () => {
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Filters</h3>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <div className="relative">
@@ -220,6 +221,18 @@ const Calls = () => {
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Call Type</label>
+            <select
+              value={filters.callType}
+              onChange={(e) => setFilters({ ...filters, callType: e.target.value })}
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">All Calls</option>
+              <option value="automated">🤖 AI Automated</option>
+              <option value="manual">👤 Manual</option>
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Campaign</label>
@@ -317,6 +330,9 @@ const Calls = () => {
                       Contact
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Campaign
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -359,6 +375,17 @@ const Calls = () => {
                             <div className="text-sm text-gray-500">{call.phone || '-'}</div>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {call.callType === 'automated' ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            🤖 AI
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            👤 Manual
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {call.campaignName || '-'}
