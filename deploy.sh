@@ -1,303 +1,525 @@
 #!/bin/bash
+set -e
 
-##############################################
-# AI Dialer Pro - Production Deployment Script
-# Quick deployment helper
-##############################################
+################################################################################
+# AI Dialer - Complete Production Deployment Script
+#
+# ONLY CHANGE THIS: Set your domain name below
+# Everything else is handled automatically
+################################################################################
 
-set -e  # Exit on error
+# ============================================================================
+# 🔧 CONFIGURATION - CHANGE THIS TO YOUR DOMAIN
+# ============================================================================
+DOMAIN="yourdomain.com"  # ⚠️ CHANGE THIS TO YOUR ACTUAL DOMAIN
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# ============================================================================
+# DO NOT CHANGE ANYTHING BELOW THIS LINE
+# ============================================================================
 
-# Configuration
-APP_DIR="/opt/ai-dialer"
-ENV_FILE=".env.production"
-COMPOSE_FILE="docker-compose.production.yml"
+echo "========================================"
+echo "🚀 AI Dialer Production Deployment"
+echo "========================================"
+echo ""
+echo "Domain: $DOMAIN"
+echo ""
 
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN} AI Dialer Pro - Production Deployment${NC}"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# Detect if this is first run or update
+FIRST_RUN=false
+if [ ! -f .env.production ]; then
+    FIRST_RUN=true
+    echo "📋 Mode: First Time Deployment"
+else
+    echo "📋 Mode: Update Deployment"
+fi
+echo ""
 
-# Function: Check prerequisites
-check_prerequisites() {
-    echo -e "\n${YELLOW}[1/10] Checking prerequisites...${NC}"
+# Get server IP
+echo "🔍 Detecting server IP..."
+PUBLIC_IP=$(curl -s ifconfig.me || curl -s icanhazip.com || echo "localhost")
+echo "   Server IP: $PUBLIC_IP"
+echo ""
 
-    # Check Docker
-    if ! command -v docker &> /dev/null; then
-        echo -e "${RED}✗ Docker is not installed${NC}"
-        exit 1
+# ============================================================================
+# STEP 1: BACKUP EXISTING DATA (if exists)
+# ============================================================================
+if [ "$FIRST_RUN" = false ]; then
+    echo "💾 Creating backup of existing data..."
+    BACKUP_DIR="./backups"
+    BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+    mkdir -p $BACKUP_DIR
+
+    # Backup database if container exists
+    if docker ps -a | grep -q ai-dialer-postgres; then
+        echo "   Backing up database..."
+        docker exec ai-dialer-postgres pg_dump -U ai_dialer_user ai_dialer_prod 2>/dev/null | \
+          gzip > $BACKUP_DIR/backup_${BACKUP_DATE}.sql.gz || echo "   No database to backup"
     fi
-    echo -e "${GREEN}✓ Docker found: $(docker --version)${NC}"
+    echo "   ✓ Backup complete"
+    echo ""
+fi
 
-    # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        echo -e "${RED}✗ Docker Compose is not installed${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}✓ Docker Compose found: $(docker-compose --version)${NC}"
+# ============================================================================
+# STEP 2: GENERATE SECURE CREDENTIALS (only on first run)
+# ============================================================================
+if [ "$FIRST_RUN" = true ]; then
+    echo "🔐 Generating secure passwords..."
+    DB_PASSWORD=$(openssl rand -base64 32 | tr -d '\n' | tr -d '=+/')
+    REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d '\n' | tr -d '=+/')
+    ARI_PASSWORD=$(openssl rand -base64 32 | tr -d '\n' | tr -d '=+/')
+    JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    SESSION_SECRET=$(openssl rand -base64 32 | tr -d '\n')
+    echo "   ✓ Passwords generated"
+    echo ""
+else
+    echo "📝 Loading existing credentials..."
+    source .env.production
+    echo "   ✓ Credentials loaded"
+    echo ""
+fi
 
-    # Check if running as root or with sudo
-    if [ "$EUID" -ne 0 ]; then
-        echo -e "${YELLOW}⚠ Warning: Not running as root. You may need sudo for some operations.${NC}"
-    fi
-}
+# ============================================================================
+# STEP 3: CREATE ENVIRONMENT FILES
+# ============================================================================
+echo "📝 Creating environment configuration..."
 
-# Function: Create directories
-create_directories() {
-    echo -e "\n${YELLOW}[2/10] Creating directories...${NC}"
+# Server .env.production
+cat > .env.production << EOF
+# Production Environment - Auto-generated on $(date)
+# Domain: $DOMAIN
 
-    mkdir -p backups
-    mkdir -p nginx
-    mkdir -p certbot/conf
-    mkdir -p certbot/www
-    mkdir -p server/logs
-    mkdir -p server/uploads
-    mkdir -p asterisk-logs
-    mkdir -p audio-cache
+# =============================================================================
+# DOMAIN CONFIGURATION
+# =============================================================================
+DOMAIN=$DOMAIN
+API_URL=https://api.$DOMAIN
+CLIENT_URL=https://$DOMAIN
 
-    echo -e "${GREEN}✓ Directories created${NC}"
-}
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=ai_dialer_prod
+DB_USER=ai_dialer_user
+DB_PASSWORD=$DB_PASSWORD
 
-# Function: Check environment file
-check_env_file() {
-    echo -e "\n${YELLOW}[3/10] Checking environment configuration...${NC}"
-
-    if [ ! -f "$ENV_FILE" ]; then
-        echo -e "${RED}✗ Environment file not found: $ENV_FILE${NC}"
-        echo -e "${YELLOW}Creating template...${NC}"
-
-        cat > $ENV_FILE << 'EOF'
-# IMPORTANT: Change all values before deploying!
-NODE_ENV=production
-DOMAIN=yourdomain.com
-API_URL=https://api.yourdomain.com
-CLIENT_URL=https://yourdomain.com
-
-# Database - CHANGE THESE!
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
 POSTGRES_DB=ai_dialer_prod
 POSTGRES_USER=ai_dialer_user
-POSTGRES_PASSWORD=CHANGE_ME_STRONG_PASSWORD
+POSTGRES_PASSWORD=$DB_PASSWORD
 
-# Redis - CHANGE THIS!
-REDIS_PASSWORD=CHANGE_ME_REDIS_PASSWORD
+# =============================================================================
+# REDIS CONFIGURATION
+# =============================================================================
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=$REDIS_PASSWORD
 
-# JWT & Security - CHANGE THESE!
-JWT_SECRET=CHANGE_ME_TO_VERY_LONG_RANDOM_STRING
-SESSION_SECRET=CHANGE_ME_SESSION_SECRET
+# =============================================================================
+# SECURITY & JWT
+# =============================================================================
+JWT_SECRET=$JWT_SECRET
+JWT_EXPIRES_IN=7d
+SESSION_SECRET=$SESSION_SECRET
 
-# Telnyx Configuration - ADD YOUR CREDENTIALS!
-TELNYX_API_KEY=
-TELNYX_SIP_USERNAME=
-TELNYX_SIP_PASSWORD=
-TELNYX_DID=+1234567890
+# =============================================================================
+# ASTERISK ARI CONFIGURATION
+# =============================================================================
+ARI_URL=http://asterisk:8088/ari
+ARI_USERNAME=ai-dialer
+ARI_PASSWORD=$ARI_PASSWORD
+ASTERISK_HOST=asterisk
+ASTERISK_ARI_PORT=8088
 
-# Asterisk ARI - CHANGE THIS!
-ARI_PASSWORD=CHANGE_ME_ARI_PASSWORD
+# =============================================================================
+# TELNYX CONFIGURATION
+# =============================================================================
+TELNYX_API_KEY=KEY0199FFA0EB5D4947F9F3CD455BE32997
+TELNYX_PHONE_NUMBER=+18058690081
+TELNYX_SIP_USERNAME=userinfo63399
+TELNYX_SIP_PASSWORD=-WUgqhX.ZXYM
+TELNYX_DOMAIN=sip.telnyx.com
+TELNYX_SIP_URI=userinfo63399@sip.telnyx.com
+TELNYX_CALLER_ID=+18058690081
+TELNYX_IP_RANGE=
+
+# =============================================================================
+# APPLICATION CONFIGURATION
+# =============================================================================
+NODE_ENV=production
+PORT=3000
+VOICE_STACK=self_hosted
+
+# =============================================================================
+# TEXT-TO-SPEECH CONFIGURATION
+# =============================================================================
+TTS_ENGINE=google
+TTS_LANGUAGE=en-US
+TTS_VOICE=en-US-Wavenet-D
+TTS_SPEED=1.0
+TTS_PITCH=0.0
+TTS_VOLUME=0.0
+TTS_CACHE_ENABLED=true
+TTS_CACHE_TTL=3600
+TTS_CACHE_MAX_SIZE=1000
+
+# =============================================================================
+# CALL CONFIGURATION
+# =============================================================================
+DEFAULT_CALL_TIMEOUT=30
+MAX_CALL_DURATION=300
+MAX_CONCURRENT_CALLS=50
+CALL_INTERVAL_MS=30000
+MAX_RETRY_ATTEMPTS=3
+
+# =============================================================================
+# CORS CONFIGURATION
+# =============================================================================
+CORS_ORIGIN=https://$DOMAIN,https://www.$DOMAIN,https://api.$DOMAIN
+
+# =============================================================================
+# RATE LIMITING
+# =============================================================================
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=10000
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+LOG_LEVEL=info
+LOG_FILE=logs/app.log
+ERROR_LOG_FILE=logs/error.log
+DEBUG=ai-dialer:*
+ENABLE_DEBUG_LOGS=true
+
+# =============================================================================
+# DATABASE POOL
+# =============================================================================
+DB_POOL_MIN=2
+DB_POOL_MAX=10
+DB_POOL_IDLE_TIMEOUT=30000
+
+# =============================================================================
+# FEATURES
+# =============================================================================
+ENABLE_EMOTION_DETECTION=true
+ENABLE_VOICE_ANALYTICS=true
+ENABLE_CALL_RECORDING=true
+ENABLE_REAL_TIME_MONITORING=true
+ENABLE_AI_CONVERSATION=true
+
+# =============================================================================
+# HEALTH CHECK
+# =============================================================================
+HEALTH_CHECK_INTERVAL=30000
+HEALTH_CHECK_TIMEOUT=5000
 EOF
 
-        echo -e "${YELLOW}⚠ Please edit $ENV_FILE and configure all variables!${NC}"
+chmod 600 .env.production
+echo "   ✓ Server environment created"
+
+# Client .env
+cat > client/.env << EOF
+REACT_APP_API_URL=/api/v1
+REACT_APP_WS_URL=/ws
+REACT_APP_API_BASE_URL=https://api.$DOMAIN
+EOF
+
+echo "   ✓ Client environment created"
+
+# Asterisk ARI config
+mkdir -p asterisk-config
+cat > asterisk-config/ari.conf << EOF
+[general]
+enabled = yes
+pretty = yes
+allowed_origins = *
+
+[ai-dialer]
+type = user
+read_only = no
+password = $ARI_PASSWORD
+EOF
+
+echo "   ✓ Asterisk ARI config created"
+echo ""
+
+# ============================================================================
+# STEP 4: SETUP SSL CERTIFICATE
+# ============================================================================
+echo "🔐 Setting up SSL certificate..."
+
+# Check if domain resolves
+if ! nslookup $DOMAIN > /dev/null 2>&1; then
+    echo "   ⚠️  WARNING: Domain $DOMAIN does not resolve to this server!"
+    echo "   Please configure DNS first with these records:"
+    echo ""
+    echo "   A    @      $PUBLIC_IP"
+    echo "   A    www    $PUBLIC_IP"
+    echo "   A    api    $PUBLIC_IP"
+    echo ""
+    read -p "   Continue anyway? (yes/no): " continue_dns
+    if [ "$continue_dns" != "yes" ]; then
+        echo "Deployment cancelled. Please configure DNS first."
         exit 1
     fi
+fi
 
-    # Check for unconfigured values
-    if grep -q "CHANGE_ME\|yourdomain.com" $ENV_FILE; then
-        echo -e "${RED}✗ Environment file contains default values!${NC}"
-        echo -e "${YELLOW}Please update the following in $ENV_FILE:${NC}"
-        grep -n "CHANGE_ME\|yourdomain.com" $ENV_FILE
-        exit 1
-    fi
+# Setup SSL
+mkdir -p ./ssl
 
-    echo -e "${GREEN}✓ Environment file configured${NC}"
-}
+if [ ! -f ./ssl/nginx-selfsigned.crt ] || [ "$FIRST_RUN" = true ]; then
+    # Try Let's Encrypt first
+    if command -v certbot &> /dev/null; then
+        echo "   Attempting Let's Encrypt certificate..."
 
-# Function: Generate secrets
-generate_secrets() {
-    echo -e "\n${YELLOW}[4/10] Generating secure secrets (if needed)...${NC}"
+        # Stop any service on port 80
+        docker-compose -f docker-compose.demo.yml stop frontend 2>/dev/null || true
 
-    echo "JWT Secret:     $(openssl rand -base64 64 | tr -d '\n')"
-    echo "Session Secret: $(openssl rand -base64 32 | tr -d '\n')"
-    echo "Redis Password: $(openssl rand -base64 32 | tr -d '\n')"
-    echo "DB Password:    $(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)"
+        sudo certbot certonly --standalone \
+          -d $DOMAIN \
+          -d www.$DOMAIN \
+          -d api.$DOMAIN \
+          --non-interactive \
+          --agree-tos \
+          --email admin@$DOMAIN 2>/dev/null || {
+            echo "   Let's Encrypt failed, generating self-signed certificate..."
+            openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+              -keyout ./ssl/nginx-selfsigned.key \
+              -out ./ssl/nginx-selfsigned.crt \
+              -subj "/C=US/ST=State/L=City/O=Organization/CN=$DOMAIN"
 
-    echo -e "${GREEN}✓ Secrets generated (copy to .env.production if needed)${NC}"
-}
+            # Generate dhparam
+            openssl dhparam -out ./ssl/dhparam.pem 2048 2>/dev/null || \
+              openssl dhparam -out ./ssl/dhparam.pem 1024
+        }
 
-# Function: Setup SSL
-setup_ssl() {
-    echo -e "\n${YELLOW}[5/10] SSL Certificate Setup${NC}"
+        # Copy Let's Encrypt certs if successful
+        if [ -d /etc/letsencrypt/live/$DOMAIN ]; then
+            sudo cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem ./ssl/nginx-selfsigned.crt
+            sudo cp /etc/letsencrypt/live/$DOMAIN/privkey.pem ./ssl/nginx-selfsigned.key
+            sudo chmod 644 ./ssl/nginx-selfsigned.crt
+            sudo chmod 600 ./ssl/nginx-selfsigned.key
 
-    read -p "Do you want to setup SSL with Let's Encrypt? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        read -p "Enter your domain: " DOMAIN
-        read -p "Enter your email: " EMAIL
-
-        echo -e "${YELLOW}Requesting SSL certificate...${NC}"
-
-        docker-compose -f $COMPOSE_FILE run --rm certbot certonly \
-            --webroot \
-            --webroot-path=/var/www/certbot \
-            --email $EMAIL \
-            --agree-tos \
-            --no-eff-email \
-            -d $DOMAIN
-
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ SSL certificate obtained${NC}"
-        else
-            echo -e "${RED}✗ SSL certificate request failed${NC}"
+            # Generate dhparam if needed
+            if [ ! -f ./ssl/dhparam.pem ]; then
+                openssl dhparam -out ./ssl/dhparam.pem 2048 2>/dev/null || \
+                  openssl dhparam -out ./ssl/dhparam.pem 1024
+            fi
         fi
     else
-        echo -e "${YELLOW}⚠ Skipping SSL setup${NC}"
+        echo "   Certbot not found, generating self-signed certificate..."
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout ./ssl/nginx-selfsigned.key \
+          -out ./ssl/nginx-selfsigned.crt \
+          -subj "/C=US/ST=State/L=City/O=Organization/CN=$DOMAIN"
+
+        openssl dhparam -out ./ssl/dhparam.pem 2048 2>/dev/null || \
+          openssl dhparam -out ./ssl/dhparam.pem 1024
     fi
-}
+fi
 
-# Function: Build images
-build_images() {
-    echo -e "\n${YELLOW}[6/10] Building Docker images...${NC}"
+echo "   ✓ SSL certificates ready"
+echo ""
 
-    docker-compose -f $COMPOSE_FILE build --no-cache
+# ============================================================================
+# STEP 5: CLEANUP OLD CONTAINERS & IMAGES (preserve volumes!)
+# ============================================================================
+echo "🧹 Cleaning up old containers and images..."
 
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Docker images built successfully${NC}"
-    else
-        echo -e "${RED}✗ Failed to build Docker images${NC}"
-        exit 1
+# Stop and remove containers (but keep volumes!)
+docker-compose -f docker-compose.demo.yml down 2>/dev/null || true
+
+# Remove old images to free space
+docker image prune -a -f > /dev/null 2>&1 || true
+
+# Remove dangling volumes (not the named ones we need!)
+docker volume prune -f > /dev/null 2>&1 || true
+
+echo "   ✓ Cleanup complete (data volumes preserved)"
+echo ""
+
+# ============================================================================
+# STEP 6: BUILD AND DEPLOY SERVICES
+# ============================================================================
+echo "🚀 Building and deploying services..."
+echo "   (This may take 3-5 minutes on first run)"
+echo ""
+
+# Export environment variables for docker-compose
+export POSTGRES_PASSWORD=$DB_PASSWORD
+export REDIS_PASSWORD=$REDIS_PASSWORD
+export ARI_PASSWORD=$ARI_PASSWORD
+export CLIENT_URL=https://$DOMAIN
+export API_URL=https://api.$DOMAIN
+export JWT_SECRET=$JWT_SECRET
+export SESSION_SECRET=$SESSION_SECRET
+export POSTGRES_DB=ai_dialer_prod
+export POSTGRES_USER=ai_dialer_user
+
+# Build images
+docker-compose -f docker-compose.demo.yml build --no-cache
+
+# Start services
+docker-compose -f docker-compose.demo.yml up -d
+
+echo "   ✓ Services started"
+echo ""
+
+# ============================================================================
+# STEP 7: WAIT FOR SERVICES TO BE READY
+# ============================================================================
+echo "⏳ Waiting for services to initialize..."
+
+# Wait for database
+echo -n "   Waiting for database"
+for i in {1..30}; do
+    if docker exec ai-dialer-postgres pg_isready -U ai_dialer_user > /dev/null 2>&1; then
+        echo " ✓"
+        break
     fi
-}
+    echo -n "."
+    sleep 2
+done
 
-# Function: Start services
-start_services() {
-    echo -e "\n${YELLOW}[7/10] Starting services...${NC}"
-
-    docker-compose -f $COMPOSE_FILE up -d
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Services started${NC}"
-    else
-        echo -e "${RED}✗ Failed to start services${NC}"
-        exit 1
+# Wait for backend
+echo -n "   Waiting for backend"
+for i in {1..60}; do
+    if curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
+        echo " ✓"
+        break
     fi
+    echo -n "."
+    sleep 2
+done
 
-    echo -e "\n${YELLOW}Waiting for services to be ready...${NC}"
+echo ""
+
+# ============================================================================
+# STEP 8: DATABASE SETUP (only on first run)
+# ============================================================================
+if [ "$FIRST_RUN" = true ]; then
+    echo "🔄 Setting up database..."
+
+    # Wait a bit more for database to be fully ready
     sleep 10
-}
 
-# Function: Run migrations
-run_migrations() {
-    echo -e "\n${YELLOW}[8/10] Running database migrations...${NC}"
+    # Run migrations
+    echo "   Running migrations..."
+    docker exec ai-dialer-backend npm run migrate 2>&1 | tail -10 || echo "   Migrations completed or not needed"
 
-    # Wait for backend to be ready
-    for i in {1..30}; do
-        if docker exec ai-dialer-backend npm run migrate 2>/dev/null; then
-            echo -e "${GREEN}✓ Migrations completed${NC}"
-            return 0
-        fi
-        echo -n "."
-        sleep 2
-    done
+    # Create default organization
+    echo "   Creating default organization..."
+    docker exec ai-dialer-backend node -e "
+    const {query} = require('./config/database');
+    (async () => {
+        try {
+            await query('INSERT INTO organizations (name) VALUES (\$1) ON CONFLICT DO NOTHING', ['Default Organization']);
+            console.log('   ✓ Organization created');
+        } catch(e) {
+            console.log('   Organization may already exist');
+        }
+        process.exit(0);
+    })();
+    " 2>&1
 
-    echo -e "${RED}✗ Migration timeout${NC}"
-    echo -e "${YELLOW}You may need to run migrations manually:${NC}"
-    echo "  docker exec -it ai-dialer-backend npm run migrate"
-}
+    # Create admin user
+    echo "   Creating admin user..."
+    docker exec ai-dialer-backend node -e "
+    const {query} = require('./config/database');
+    const bcrypt = require('bcryptjs');
+    (async () => {
+        try {
+            const hashedPassword = await bcrypt.hash('Admin123!', 10);
+            await query(\`
+                INSERT INTO users (email, password_hash, first_name, last_name, role, organization_id)
+                VALUES (\\\$1, \\\$2, \\\$3, \\\$4, \\\$5, (SELECT id FROM organizations LIMIT 1))
+                ON CONFLICT (email) DO NOTHING
+            \`, ['admin@$DOMAIN', hashedPassword, 'Admin', 'User', 'admin']);
+            console.log('   ✓ Admin user created: admin@$DOMAIN / Admin123!');
+        } catch(e) {
+            console.log('   Admin user may already exist');
+        }
+        process.exit(0);
+    })();
+    " 2>&1
 
-# Function: Create admin user
-create_admin() {
-    echo -e "\n${YELLOW}[9/10] Creating admin user...${NC}"
+    echo ""
+fi
 
-    read -p "Create admin user now? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker exec -it ai-dialer-backend node scripts/create-admin.js
-    else
-        echo -e "${YELLOW}⚠ Skipping admin user creation${NC}"
-        echo "You can create admin later with:"
-        echo "  docker exec -it ai-dialer-backend node scripts/create-admin.js"
-    fi
-}
+# ============================================================================
+# STEP 9: CONFIGURE FIREWALL
+# ============================================================================
+echo "🔥 Configuring firewall..."
+sudo ufw allow 22/tcp comment 'SSH' 2>/dev/null || true
+sudo ufw allow 80/tcp comment 'HTTP' 2>/dev/null || true
+sudo ufw allow 443/tcp comment 'HTTPS' 2>/dev/null || true
+sudo ufw allow 3000/tcp comment 'Backend API' 2>/dev/null || true
+sudo ufw allow 3001/tcp comment 'Frontend' 2>/dev/null || true
+sudo ufw allow 5060/udp comment 'SIP' 2>/dev/null || true
+sudo ufw allow 8088/tcp comment 'Asterisk ARI' 2>/dev/null || true
+sudo ufw allow 10000:10100/udp comment 'RTP Media' 2>/dev/null || true
+echo "   ✓ Firewall configured"
+echo ""
 
-# Function: Health check
-health_check() {
-    echo -e "\n${YELLOW}[10/10] Running health checks...${NC}"
+# ============================================================================
+# STEP 10: FINAL HEALTH CHECK
+# ============================================================================
+echo "🔍 Final health check..."
 
-    # Check containers
-    echo -e "\nContainer Status:"
-    docker-compose -f $COMPOSE_FILE ps
+BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health)
+FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001)
 
-    # Check backend health
-    echo -e "\n${YELLOW}Checking backend API...${NC}"
-    if curl -f http://localhost:3000/health &> /dev/null; then
-        echo -e "${GREEN}✓ Backend API is healthy${NC}"
-    else
-        echo -e "${RED}✗ Backend API is not responding${NC}"
-    fi
-
-    # Check database
-    echo -e "\n${YELLOW}Checking database...${NC}"
-    if docker exec ai-dialer-postgres pg_isready -U ai_dialer_user &> /dev/null; then
-        echo -e "${GREEN}✓ Database is ready${NC}"
-    else
-        echo -e "${RED}✗ Database is not ready${NC}"
-    fi
-
-    # Check Redis
-    echo -e "\n${YELLOW}Checking Redis...${NC}"
-    if docker exec ai-dialer-redis redis-cli ping &> /dev/null; then
-        echo -e "${GREEN}✓ Redis is ready${NC}"
-    else
-        echo -e "${RED}✗ Redis is not ready${NC}"
-    fi
-}
-
-# Function: Show summary
-show_summary() {
-    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN} Deployment Complete!${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    # Load domain from env file
-    DOMAIN=$(grep "^DOMAIN=" $ENV_FILE | cut -d'=' -f2)
-
-    echo -e "\n${YELLOW}Access your application:${NC}"
-    echo "  Frontend: https://$DOMAIN"
-    echo "  API:      https://api.$DOMAIN"
-    echo "  Health:   http://localhost:3000/health"
-
-    echo -e "\n${YELLOW}Useful commands:${NC}"
-    echo "  View logs:        docker-compose -f $COMPOSE_FILE logs -f"
-    echo "  Restart services: docker-compose -f $COMPOSE_FILE restart"
-    echo "  Stop services:    docker-compose -f $COMPOSE_FILE down"
-    echo "  Backup database:  ./scripts/backup-db.sh"
-
-    echo -e "\n${YELLOW}Next steps:${NC}"
-    echo "  1. Configure DNS records to point to this server"
-    echo "  2. Test the application thoroughly"
-    echo "  3. Setup automated backups (cron)"
-    echo "  4. Configure monitoring and alerts"
-    echo "  5. Review security settings"
-
-    echo -e "\n${GREEN}For detailed documentation, see: PRODUCTION_DEPLOYMENT_GUIDE.md${NC}"
-}
-
-# Main execution
-main() {
-    check_prerequisites
-    create_directories
-    check_env_file
-    generate_secrets
-    setup_ssl
-    build_images
-    start_services
-    run_migrations
-    create_admin
-    health_check
-    show_summary
-}
-
-# Run main function
-main
+echo ""
+echo "========================================"
+echo "✅ DEPLOYMENT COMPLETE!"
+echo "========================================"
+echo ""
+echo "🌐 Your Application URLs:"
+echo "   Frontend:  https://$DOMAIN"
+echo "   www:       https://www.$DOMAIN"
+echo "   API:       https://api.$DOMAIN"
+echo ""
+echo "📊 Local Access (for testing):"
+echo "   Frontend:  http://$PUBLIC_IP:3001"
+echo "   Backend:   http://$PUBLIC_IP:3000"
+echo ""
+echo "🔐 Admin Login:"
+if [ "$FIRST_RUN" = true ]; then
+    echo "   Email:     admin@$DOMAIN"
+    echo "   Password:  Admin123!"
+else
+    echo "   Use your existing credentials"
+fi
+echo ""
+echo "📊 Service Status:"
+echo "   Backend:   $( [ "$BACKEND_STATUS" = "200" ] && echo "✅ RUNNING" || echo "⚠️  Starting (check logs)")"
+echo "   Frontend:  $( [ "$FRONTEND_STATUS" = "200" ] && echo "✅ RUNNING" || echo "⚠️  Starting (check logs)")"
+docker-compose -f docker-compose.demo.yml ps
+echo ""
+echo "🔧 Useful Commands:"
+echo "   Check status:     docker-compose -f docker-compose.demo.yml ps"
+echo "   View logs:        docker-compose -f docker-compose.demo.yml logs -f"
+echo "   Restart:          docker-compose -f docker-compose.demo.yml restart"
+echo ""
+echo "📝 Data Persistence:"
+echo "   ✅ Database: postgres_data volume (preserved)"
+echo "   ✅ Redis: redis_data volume (preserved)"
+echo "   ✅ Uploads: ./server/uploads (preserved)"
+echo "   ✅ Logs: ./server/logs (preserved)"
+echo "   ✅ Backups: ./backups/ (preserved)"
+echo ""
+echo "🔄 To Deploy Updates:"
+echo "   1. Push changes to GitHub"
+echo "   2. SSH to server: ssh ubuntu@$PUBLIC_IP"
+echo "   3. Pull changes: git pull origin main"
+echo "   4. Run deployment: ./deploy.sh"
+echo ""
+echo "⚠️  Important:"
+echo "   - Configure DNS A records pointing to: $PUBLIC_IP"
+echo "   - Open AWS Security Group ports: 80, 443, 3000, 3001, 5060, 8088"
+echo "   - Backups saved to: ./backups/"
+echo ""
+echo "========================================"

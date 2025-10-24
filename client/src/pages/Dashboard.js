@@ -79,6 +79,21 @@ const Dashboard = () => {
     recentCalls: [],
   };
 
+  // Format change values
+  const formatChange = (value, label) => {
+    if (value === 0 || value === undefined || value === null) return '0% vs last period';
+    const formatted = Math.abs(value).toFixed(1);
+    const direction = value > 0 ? '+' : '-';
+    return `${direction}${formatted}% vs last period`;
+  };
+
+  const formatCsatChange = (value) => {
+    if (value === 0 || value === undefined || value === null) return '0 vs last period';
+    const formatted = Math.abs(value).toFixed(1);
+    const direction = value > 0 ? '+' : '-';
+    return `${direction}${formatted} vs last period`;
+  };
+
   return (
     <div className='space-y-6'>
       {/* Header */}
@@ -96,6 +111,7 @@ const Dashboard = () => {
             <option value='1d'>Today</option>
             <option value='7d'>Last 7 Days</option>
             <option value='30d'>Last 30 Days</option>
+            <option value='90d'>Last 90 Days</option>
           </select>
         </div>
       </div>
@@ -106,35 +122,40 @@ const Dashboard = () => {
           {
             label: 'Total Calls',
             value: data.totalCalls,
-            change: '+12% vs last month',
+            change: formatChange(data.totalCallsChange),
+            changeColor: (data.totalCallsChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
             icon: <PhoneIcon className='h-6 w-6 text-blue-600' />,
             bg: 'bg-blue-50',
           },
           {
             label: 'Completed',
             value: data.completed,
-            change: '+8% vs last month',
+            change: formatChange(data.totalCallsChange), // Using total calls change as proxy for completed
+            changeColor: (data.totalCallsChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
             icon: <CheckCircleIcon className='h-6 w-6 text-green-600' />,
             bg: 'bg-green-50',
           },
           {
             label: 'Meetings',
             value: data.meetings,
-            change: '+23% vs last month',
+            change: formatChange(data.conversionRateChange),
+            changeColor: (data.conversionRateChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
             icon: <CalendarIcon className='h-6 w-6 text-purple-600' />,
             bg: 'bg-purple-50',
           },
           {
             label: 'Avg CSAT',
-            value: `${data.avgCSAT}/5`,
-            change: '+0.3 vs last month',
+            value: `${(data.avgCSAT || 0).toFixed(1)}/5`,
+            change: formatCsatChange(data.csatChange),
+            changeColor: (data.csatChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
             icon: <HandThumbUpIcon className='h-6 w-6 text-orange-600' />,
             bg: 'bg-orange-50',
           },
           {
             label: 'ROI',
-            value: `${data.roi}%`,
-            change: '+15% vs last month',
+            value: `${data.roi || 0}%`,
+            change: formatChange(data.conversionRateChange), // Using conversion rate change as proxy for ROI
+            changeColor: (data.conversionRateChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
             icon: <CurrencyDollarIcon className='h-6 w-6 text-green-600' />,
             bg: 'bg-green-50',
           },
@@ -144,7 +165,7 @@ const Dashboard = () => {
               <div className='flex flex-col'>
                 <p className='text-sm font-medium text-gray-500'>{stat.label}</p>
                 <p className='text-3xl font-bold text-gray-900'>{stat.value}</p>
-                <p className='text-sm text-green-600'>{stat.change}</p>
+                <p className={`text-sm ${stat.changeColor || 'text-gray-600'}`}>{stat.change}</p>
               </div>
               <div className={`p-3 ${stat.bg} rounded-lg`}>{stat.icon}</div>
             </div>

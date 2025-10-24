@@ -102,6 +102,29 @@ const Contacts = () => {
     },
   });
 
+  // Bulk update status mutation
+  const bulkUpdateStatusMutation = useMutation({
+    mutationFn: ({ campaignId, status }) => contactsAPI.bulkUpdateStatus(campaignId, status),
+    onSuccess: (response) => {
+      toast.success(`${response.updatedCount} contacts prepared for calling`);
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contact-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to prepare contacts');
+    },
+  });
+
+  // Handler for preparing contacts for calling
+  const handlePrepareForCalling = (campaignId) => {
+    if (!campaignId) {
+      toast.error('Please select a campaign first');
+      return;
+    }
+    bulkUpdateStatusMutation.mutate({ campaignId, status: 'pending' });
+  };
+
   // Bulk delete mutation
   const bulkDeleteMutation = useMutation({
     mutationFn: (contactIds) => contactsAPI.bulkDelete(contactIds),
@@ -241,6 +264,16 @@ const Contacts = () => {
             <ArrowUpTrayIcon className="h-5 w-5 mr-2" />
             Bulk Import
           </button>
+          {filters.campaign && (
+            <button
+              onClick={() => handlePrepareForCalling(filters.campaign)}
+              disabled={bulkUpdateStatusMutation.isLoading}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              <CheckCircleIcon className="h-5 w-5 mr-2" />
+              {bulkUpdateStatusMutation.isLoading ? 'Preparing...' : 'Prepare for Calling'}
+            </button>
+          )}
           <button
             onClick={() => setIsAddContactModalOpen(true)}
             className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"

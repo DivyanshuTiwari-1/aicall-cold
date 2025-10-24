@@ -6,12 +6,17 @@ import {
     CurrencyDollarIcon,
     HandThumbUpIcon,
 } from '@heroicons/react/24/outline';
-import { useQuery } from '@tanstack/react-query';
-import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../contexts/AuthContext';
+import { useWebSocket } from '../hooks/useWebSocket';
 import analyticsAPI from '../services/analytics';
 
 const ExecutiveDashboard = () => {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { addListener, isConnected } = useWebSocket();
   const [dateRange, setDateRange] = useState('30d');
 
   // Fetch dashboard analytics
@@ -28,6 +33,37 @@ const ExecutiveDashboard = () => {
     refetchInterval: 60000,
   });
 
+  // Set up WebSocket listeners for real-time updates
+  useEffect(() => {
+    if (!isConnected || !user?.organizationId) return;
+
+    const handleCallUpdate = (data) => {
+      // Refresh dashboard data when call status changes
+      queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['productivity'] });
+    };
+
+    const handleAgentUpdate = (data) => {
+      // Refresh dashboard data when agent status changes
+      queryClient.invalidateQueries({ queryKey: ['productivity'] });
+    };
+
+    const handleOrganizationUpdate = (data) => {
+      // Refresh all dashboard data
+      queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['productivity'] });
+    };
+
+    addListener('call_status_update', handleCallUpdate);
+    addListener('call_completed', handleCallUpdate);
+    addListener('agent_status_change', handleAgentUpdate);
+    addListener('organization_update', handleOrganizationUpdate);
+
+    return () => {
+      // Cleanup listeners when component unmounts
+    };
+  }, [isConnected, user?.organizationId, addListener, queryClient]);
+
   if (dashboardLoading || productivityLoading) {
     return <LoadingSpinner />;
   }
@@ -35,30 +71,42 @@ const ExecutiveDashboard = () => {
   const data = dashboardData?.data || {};
   const productivity = productivityData?.productivity || {};
 
-  // Calculate revenue metrics
-  const qualifiedLeads = (data.meetings || 0) + (data.completed || 0);
-  const avgRevenuePerLead = 5300; // Average revenue per qualified lead (can be configured)
-  const totalRevenue = qualifiedLeads * avgRevenuePerLead;
-  const totalCost = productivity.total_cost || 0;
-  const roi = totalCost > 0 ? ((totalRevenue - totalCost) / totalCost * 100).toFixed(0) : 0;
+  // Use real data from backend
+  const qualifiedLeads = data.qualifiedLeads || 0;
+  const totalRevenue = data.totalRevenue || 0;
+  const totalCost = data.totalCost || 0;
+  const roi = data.roi || 0;
+
+  // Format change values to show trend direction
+  const formatChange = (value) => {
+    if (value === 0 || value === undefined || value === null) return '0%';
+    const formatted = Math.abs(value).toFixed(0);
+    return value > 0 ? `+${formatted}%` : `-${formatted}%`;
+  };
+
+  const formatCsatChange = (value) => {
+    if (value === 0 || value === undefined || value === null) return '0';
+    const formatted = Math.abs(value).toFixed(1);
+    return value > 0 ? `+${formatted}` : `-${formatted}`;
+  };
 
   const metrics = [
     {
       title: 'Total Revenue Impact',
       value: `₹${(totalRevenue / 100000).toFixed(1)}L`,
       description: 'From qualified leads',
-      change: `+${((qualifiedLeads / Math.max(data.totalCalls, 1)) * 100).toFixed(0)}%`,
-      changeColor: 'text-green-600',
+      change: formatChange(data.totalCallsChange),
+      changeColor: (data.totalCallsChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
       icon: CurrencyDollarIcon,
       iconColor: 'text-green-600',
       bgColor: 'bg-green-50',
     },
     {
       title: 'Cost Efficiency',
-      value: `₹${data.costPerLead || 0}`,
+      value: `₹${(data.costPerLead || 0).toFixed(2)}`,
       description: 'Per qualified lead',
-      change: `-${Math.floor(Math.random() * 20)}%`,
-      changeColor: 'text-blue-600',
+      change: formatChange(data.costPerLeadChange),
+      changeColor: (data.costPerLeadChange || 0) <= 0 ? 'text-green-600' : 'text-red-600', // Lower cost is better
       icon: ChartPieIcon,
       iconColor: 'text-blue-600',
       bgColor: 'bg-blue-50',
@@ -67,8 +115,8 @@ const ExecutiveDashboard = () => {
       title: 'Campaign ROI',
       value: `${roi}%`,
       description: 'Average return',
-      change: `+${Math.floor(Math.random() * 15)}%`,
-      changeColor: 'text-purple-600',
+      change: formatChange(data.conversionRateChange),
+      changeColor: (data.conversionRateChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
       icon: ChartBarIcon,
       iconColor: 'text-purple-600',
       bgColor: 'bg-purple-50',
@@ -77,8 +125,8 @@ const ExecutiveDashboard = () => {
       title: 'Customer Satisfaction',
       value: `${(data.avgCSAT || 0).toFixed(1)}/5`,
       description: 'Avg CSAT score',
-      change: `+0.${Math.floor(Math.random() * 5)}`,
-      changeColor: 'text-orange-600',
+      change: formatCsatChange(data.csatChange),
+      changeColor: (data.csatChange || 0) >= 0 ? 'text-green-600' : 'text-red-600',
       icon: HandThumbUpIcon,
       iconColor: 'text-orange-600',
       bgColor: 'bg-orange-50',
@@ -88,9 +136,11 @@ const ExecutiveDashboard = () => {
   // Calculate conversion funnel from real data
   const totalAttempts = data.totalCalls || 0;
   const connected = data.completed || 0;
-  const engaged = Math.floor(connected * 0.65); // Estimate engaged as 65% of connected
-  const qualified = qualifiedLeads;
+  const interested = data.interested || 0;
+  const qualified = qualifiedLeads; // meetings + interested
   const converted = data.meetings || 0;
+  // Engaged = calls that lasted more than minimal time (interested + meetings + some portion of others)
+  const engaged = interested + converted;
 
   const conversionFunnel = [
     {
@@ -278,7 +328,7 @@ const ExecutiveDashboard = () => {
         <div className='grid grid-cols-2 lg:grid-cols-4 gap-6'>
           <div>
             <p className='text-sm text-gray-600'>Cost / Lead</p>
-            <p className='text-2xl font-bold text-green-600'>₹{data.costPerLead || 0}</p>
+            <p className='text-2xl font-bold text-green-600'>₹{(data.costPerLead || 0).toFixed(2)}</p>
           </div>
           <div>
             <p className='text-sm text-gray-600'>Total Cost</p>
@@ -286,10 +336,10 @@ const ExecutiveDashboard = () => {
           </div>
           <div>
             <p className='text-sm text-gray-600'>Conversion Rate</p>
-            <p className='text-2xl font-bold text-purple-600'>{data.conversionRate || 0}%</p>
+            <p className='text-2xl font-bold text-purple-600'>{(data.conversionRate || 0)}%</p>
           </div>
           <div>
-            <p className='text-sm text-gray-600'>Projected ROI</p>
+            <p className='text-sm text-gray-600'>Campaign ROI</p>
             <p className='text-2xl font-bold text-green-600'>{roi}%</p>
           </div>
         </div>

@@ -13,7 +13,7 @@ $contact_phone = $argv[2] ?? '';
 $campaign_id = $argv[3] ?? '';
 
 // Configuration
-$api_base_url = getenv('AI_DIALER_URL') ?: 'http://localhost:3000/api/v1';
+$api_base_url = getenv('AI_DIALER_URL') ?: 'http://host.docker.internal:3000/api/v1';
 $max_conversation_turns = 20;
 $silence_timeout = 5;
 $response_timeout = 10;
@@ -28,6 +28,8 @@ function make_api_request($endpoint, $data = []) {
     global $api_base_url;
 
     $url = $api_base_url . $endpoint;
+    agi_log("API Request: $url");
+
     $ch = curl_init();
 
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -47,15 +49,16 @@ function make_api_request($endpoint, $data = []) {
     curl_close($ch);
 
     if ($error) {
-        agi_log("CURL Error: " . $error);
+        agi_log("CURL Error for $endpoint: " . $error);
         return false;
     }
 
     if ($http_code !== 200) {
-        agi_log("API Error: HTTP $http_code - $response");
+        agi_log("API Error for $endpoint: HTTP $http_code - Response: " . substr($response, 0, 200));
         return false;
     }
 
+    agi_log("API Success for $endpoint: HTTP $http_code");
     return json_decode($response, true);
 }
 

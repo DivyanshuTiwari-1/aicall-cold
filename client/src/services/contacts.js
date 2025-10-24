@@ -68,4 +68,10 @@ export const contactsAPI = {
     const response = await api.post('/contacts/bulk-delete', { contactIds });
     return response.data;
   },
+
+  // Bulk update contact status
+  bulkUpdateStatus: async (campaignId, status) => {
+    const response = await api.post('/contacts/bulk-update-status', { campaignId, status });
+    return response.data;
+  },
 };

@@ -745,6 +745,26 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
             });
         }
 
+        // Check if campaign has contacts ready for calling
+        const contactCheck = await query(`
+            SELECT COUNT(*) as count
+            FROM contacts
+            WHERE campaign_id = $1
+            AND status IN ('pending', 'retry', 'new')
+            AND organization_id = $2
+        `, [campaignId, req.organizationId]);
+
+        const contactCount = parseInt(contactCheck.rows[0].count);
+
+        if (contactCount === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No contacts ready for calling. Please add contacts with status "pending", "retry", or "new" to this campaign.'
+            });
+        }
+
+        logger.info(`Found ${contactCount} contacts ready for calling in campaign ${campaignId}`);
+
         // Update campaign status to active if it's draft
         if (campaign.status === 'draft') {
             await query(

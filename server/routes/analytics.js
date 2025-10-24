@@ -222,7 +222,7 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
         const { organizationId } = req.user;
         const { period = '7d' } = req.query;
 
-        const days = period === '1d' ? 1 : period === '7d' ? 7 : period === '30d' ? 30 : 7;
+        const days = period === '1d' ? 1 : period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 7;
 
         const productivityQuery = `
       WITH productivity_metrics AS (
@@ -233,6 +233,7 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
           COUNT(CASE WHEN c.outcome = 'interested' THEN 1 END) as total_interested_calls,
           AVG(CASE WHEN c.answered = true THEN c.duration END) as avg_talk_time,
           SUM(CASE WHEN c.answered = true THEN c.duration END) as total_talk_time,
+          SUM(c.cost) as total_cost,
           COUNT(DISTINCT c.initiated_by) as active_agents,
           COUNT(la.id) as total_assignments,
           COUNT(CASE WHEN la.status = 'completed' THEN 1 END) as completed_assignments,
@@ -242,6 +243,18 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
         WHERE c.organization_id = $1
           AND c.call_type = 'manual'
           AND c.created_at >= NOW() - INTERVAL '${days} days'
+      ),
+      prev_productivity_metrics AS (
+        SELECT
+          COUNT(c.id) as prev_total_calls_made,
+          COUNT(CASE WHEN c.answered = true THEN 1 END) as prev_total_calls_answered,
+          COUNT(CASE WHEN c.outcome = 'scheduled' THEN 1 END) as prev_total_meetings_scheduled,
+          COUNT(CASE WHEN c.outcome = 'interested' THEN 1 END) as prev_total_interested_calls
+        FROM calls c
+        WHERE c.organization_id = $1
+          AND c.call_type = 'manual'
+          AND c.created_at >= NOW() - INTERVAL '${days * 2} days'
+          AND c.created_at < NOW() - INTERVAL '${days} days'
       ),
       daily_breakdown AS (
         SELECT
@@ -275,15 +288,16 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
       )
       SELECT
         pm.*,
+        ppm.*,
         (SELECT json_agg(db) FROM daily_breakdown db) as daily_breakdown,
         (SELECT json_agg(ab) FROM agent_breakdown ab) as agent_breakdown
-      FROM productivity_metrics pm
+      FROM productivity_metrics pm, prev_productivity_metrics ppm
     `;
 
         const result = await query(productivityQuery, [organizationId]);
         const metrics = result.rows[0];
 
-        // Calculate derived metrics
+        // Calculate derived metrics for current period
         const overallConversionRate = metrics.total_calls_made > 0 ?
             (metrics.total_meetings_scheduled / metrics.total_calls_made) * 100 :
             0;
@@ -300,6 +314,28 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
             metrics.total_calls_made / metrics.active_agents :
             0;
 
+        // Calculate derived metrics for previous period
+        const prevOverallConversionRate = metrics.prev_total_calls_made > 0 ?
+            (metrics.prev_total_meetings_scheduled / metrics.prev_total_calls_made) * 100 :
+            0;
+
+        const prevOverallAnswerRate = metrics.prev_total_calls_made > 0 ?
+            (metrics.prev_total_calls_answered / metrics.prev_total_calls_made) * 100 :
+            0;
+
+        // Calculate percentage changes
+        const totalCallsChange = metrics.prev_total_calls_made > 0 ?
+            (((metrics.total_calls_made - metrics.prev_total_calls_made) / metrics.prev_total_calls_made) * 100) :
+            0;
+
+        const answeredCallsChange = metrics.prev_total_calls_answered > 0 ?
+            (((metrics.total_calls_answered - metrics.prev_total_calls_answered) / metrics.prev_total_calls_answered) * 100) :
+            0;
+
+        const conversionRateChange = prevOverallConversionRate > 0 ?
+            (((overallConversionRate - prevOverallConversionRate) / prevOverallConversionRate) * 100) :
+            0;
+
         res.json({
             success: true,
             productivity: {
@@ -309,7 +345,11 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
                 assignmentCompletionRate: Math.round(assignmentCompletionRate * 100) / 100,
                 avgCallsPerAgent: Math.round(avgCallsPerAgent * 100) / 100,
                 avgTalkTimeMinutes: metrics.avg_talk_time ? Math.round(metrics.avg_talk_time / 60 * 100) / 100 : 0,
-                totalTalkTimeHours: metrics.total_talk_time ? Math.round(metrics.total_talk_time / 3600 * 100) / 100 : 0
+                totalTalkTimeHours: metrics.total_talk_time ? Math.round(metrics.total_talk_time / 3600 * 100) / 100 : 0,
+                // Trend data
+                totalCallsChange: Math.round(totalCallsChange * 100) / 100,
+                answeredCallsChange: Math.round(answeredCallsChange * 100) / 100,
+                conversionRateChange: Math.round(conversionRateChange * 100) / 100
             }
         });
 
@@ -414,9 +454,9 @@ router.get('/dashboard', authenticateToken, requireRole('admin', 'manager', 'age
         const { organizationId, role } = req.user;
         const { range = '7d' } = req.query;
 
-        const days = range === '1d' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : 7;
+        const days = range === '1d' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : 7;
 
-        // Get basic call statistics
+        // Get basic call statistics for current period
         const statsQuery = `
             SELECT
                 COUNT(c.id) as total_calls,
@@ -434,6 +474,24 @@ router.get('/dashboard', authenticateToken, requireRole('admin', 'manager', 'age
 
         const statsResult = await query(statsQuery, [organizationId]);
         const stats = statsResult.rows[0];
+
+        // Get previous period statistics for comparison
+        const prevStatsQuery = `
+            SELECT
+                COUNT(c.id) as prev_total_calls,
+                COUNT(CASE WHEN c.answered = true THEN 1 END) as prev_completed_calls,
+                COUNT(CASE WHEN c.outcome = 'scheduled' THEN 1 END) as prev_meetings_scheduled,
+                COUNT(CASE WHEN c.outcome = 'interested' THEN 1 END) as prev_interested_calls,
+                AVG(CASE WHEN c.csat_score IS NOT NULL THEN c.csat_score END) as prev_avg_csat,
+                SUM(c.cost) as prev_total_cost
+            FROM calls c
+            WHERE c.organization_id = $1
+              AND c.created_at >= NOW() - INTERVAL '${days * 2} days'
+              AND c.created_at < NOW() - INTERVAL '${days} days'
+        `;
+
+        const prevStatsResult = await query(prevStatsQuery, [organizationId]);
+        const prevStats = prevStatsResult.rows[0];
 
         // Get campaign performance
         const campaignsQuery = `
@@ -483,14 +541,42 @@ router.get('/dashboard', authenticateToken, requireRole('admin', 'manager', 'age
         const recentCallsResult = await query(recentCallsQuery, [organizationId]);
 
         // Calculate conversion rate
+        const qualifiedLeads = parseInt(stats.meetings_scheduled || 0) + parseInt(stats.interested_calls || 0);
+        const prevQualifiedLeads = parseInt(prevStats.prev_meetings_scheduled || 0) + parseInt(prevStats.prev_interested_calls || 0);
         const conversionRate = stats.total_calls > 0
-            ? ((stats.meetings_scheduled + stats.interested_calls) / stats.total_calls * 100).toFixed(1)
+            ? ((qualifiedLeads / stats.total_calls) * 100).toFixed(1)
+            : 0;
+        const prevConversionRate = prevStats.prev_total_calls > 0
+            ? ((prevQualifiedLeads / prevStats.prev_total_calls) * 100).toFixed(1)
             : 0;
 
         // Calculate cost per lead
-        const costPerLead = (stats.meetings_scheduled + stats.interested_calls) > 0
-            ? (stats.total_cost / (stats.meetings_scheduled + stats.interested_calls)).toFixed(2)
+        const costPerLead = qualifiedLeads > 0
+            ? (stats.total_cost / qualifiedLeads).toFixed(2)
             : 0;
+        const prevCostPerLead = prevQualifiedLeads > 0
+            ? (prevStats.prev_total_cost / prevQualifiedLeads).toFixed(2)
+            : 0;
+
+        // Calculate percentage changes
+        const totalCallsChange = prevStats.prev_total_calls > 0
+            ? (((stats.total_calls - prevStats.prev_total_calls) / prevStats.prev_total_calls) * 100).toFixed(0)
+            : 0;
+        const costPerLeadChange = prevCostPerLead > 0
+            ? (((costPerLead - prevCostPerLead) / prevCostPerLead) * 100).toFixed(0)
+            : 0;
+        const conversionRateChange = prevConversionRate > 0
+            ? (((conversionRate - prevConversionRate) / prevConversionRate) * 100).toFixed(0)
+            : 0;
+        const csatChange = prevStats.prev_avg_csat > 0
+            ? ((stats.avg_csat - prevStats.prev_avg_csat)).toFixed(1)
+            : 0;
+
+        // Calculate ROI (assuming avg revenue per qualified lead)
+        const avgRevenuePerLead = 5300; // Can be configured
+        const totalRevenue = qualifiedLeads * avgRevenuePerLead;
+        const totalCost = parseFloat(stats.total_cost) || 0;
+        const roi = totalCost > 0 ? (((totalRevenue - totalCost) / totalCost) * 100).toFixed(0) : 0;
 
         res.json({
             success: true,
@@ -498,12 +584,20 @@ router.get('/dashboard', authenticateToken, requireRole('admin', 'manager', 'age
                 totalCalls: parseInt(stats.total_calls) || 0,
                 completed: parseInt(stats.completed_calls) || 0,
                 meetings: parseInt(stats.meetings_scheduled) || 0,
+                interested: parseInt(stats.interested_calls) || 0,
+                qualifiedLeads: qualifiedLeads,
                 avgCSAT: parseFloat(stats.avg_csat) || 0,
-                roi: parseFloat(stats.total_cost) || 0,
+                totalRevenue: totalRevenue,
+                totalCost: totalCost,
+                roi: parseFloat(roi),
                 costPerLead: parseFloat(costPerLead),
-                creditsUsed: parseInt(stats.total_cost) || 0,
+                creditsUsed: totalCost,
                 conversionRate: parseFloat(conversionRate),
-                projectedROI: parseFloat(stats.total_cost) || 0,
+                // Trend/change data
+                totalCallsChange: parseFloat(totalCallsChange),
+                costPerLeadChange: parseFloat(costPerLeadChange),
+                conversionRateChange: parseFloat(conversionRateChange),
+                csatChange: parseFloat(csatChange),
                 campaigns: campaignsResult.rows.map(campaign => ({
                     id: campaign.id,
                     name: campaign.name,

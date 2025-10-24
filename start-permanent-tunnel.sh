@@ -19,4 +19,3 @@ echo ""
 
 # Run tunnel
 cloudflared tunnel run $TUNNEL_NAME
-

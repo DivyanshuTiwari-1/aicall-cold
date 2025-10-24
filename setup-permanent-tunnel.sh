@@ -79,9 +79,9 @@ if [ ! -z "$CUSTOM_DOMAIN" ]; then
     echo "Setting up DNS for $CUSTOM_DOMAIN..."
     read -p "Enter subdomain (e.g., 'aidialer' for aidialer.$CUSTOM_DOMAIN): " SUBDOMAIN
     FULL_DOMAIN="$SUBDOMAIN.$CUSTOM_DOMAIN"
-    
+
     cloudflared tunnel route dns $TUNNEL_NAME $FULL_DOMAIN
-    
+
     # Update config with custom domain
     cat > $HOME/.cloudflared/config.yml << EOF
 tunnel: $TUNNEL_ID
@@ -92,7 +92,7 @@ ingress:
     service: http://localhost:3001
   - service: http_status:404
 EOF
-    
+
     echo "✅ DNS configured for: https://$FULL_DOMAIN"
     echo ""
     echo "Your permanent URL: https://$FULL_DOMAIN"
@@ -124,4 +124,3 @@ echo "📌 The tunnel will automatically reconnect on server reboot if you:"
 echo "   sudo cloudflared service install"
 echo "   sudo systemctl start cloudflared"
 echo ""
-

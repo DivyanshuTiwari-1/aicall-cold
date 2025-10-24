@@ -4,15 +4,18 @@ import {
     PhoneIcon,
     UserGroupIcon
 } from '@heroicons/react/24/outline';
-import { useQuery } from '@tanstack/react-query';
-import React from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useEffect } from 'react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
+import { useWebSocket } from '../hooks/useWebSocket';
 import analyticsAPI from '../services/analytics';
 import { usersAPI } from '../services/users';
 
 const ManagerDashboard = () => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { addListener, isConnected } = useWebSocket();
   const [dateRange, setDateRange] = React.useState('7d');
 
   // Fetch team performance data
@@ -36,28 +39,68 @@ const ManagerDashboard = () => {
     refetchInterval: 10000,
   });
 
+  // Set up WebSocket listeners for real-time updates
+  useEffect(() => {
+    if (!isConnected || !user?.organizationId) return;
+
+    const handleCallUpdate = (data) => {
+      // Refresh team performance and live calls when call status changes
+      queryClient.invalidateQueries({ queryKey: ['team-performance'] });
+      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+    };
+
+    const handleAgentUpdate = (data) => {
+      // Refresh users and team performance when agent status changes
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['team-performance'] });
+    };
+
+    const handleLeadAssignment = (data) => {
+      // Refresh team performance when leads are assigned
+      queryClient.invalidateQueries({ queryKey: ['team-performance'] });
+    };
+
+    addListener('call_status_update', handleCallUpdate);
+    addListener('call_completed', handleCallUpdate);
+    addListener('agent_status_change', handleAgentUpdate);
+    addListener('new_lead_assigned', handleLeadAssignment);
+
+    return () => {
+      // Cleanup listeners when component unmounts
+    };
+  }, [isConnected, user?.organizationId, addListener, queryClient]);
+
   if (teamLoading || usersLoading) return <LoadingSpinner />;
 
   const productivity = teamData?.productivity || {};
+  const users = usersData?.users || [];
+  const agents = users.filter(u => u.roleType === 'agent');
+  const teamSize = agents.length;
+
   const teamStats = {
     totalCalls: productivity.total_calls_made || 0,
     completedCalls: productivity.total_calls_answered || 0,
     conversionRate: productivity.overallConversionRate || 0,
     avgCallDuration: productivity.avgTalkTimeMinutes || 0,
-    teamSize: users.filter(u => u.roleType === 'agent').length,
+    teamSize: teamSize,
     activeAgents: productivity.active_agents || 0
   };
 
-  const users = usersData?.users || [];
-  const agents = users.filter(u => u.roleType === 'agent');
   const liveCalls = liveCallsData?.liveCalls || [];
+
+  // Format change values
+  const formatChange = (value) => {
+    if (value === 0 || value === undefined || value === null) return '0%';
+    const formatted = Math.abs(value).toFixed(1);
+    return value > 0 ? `+${formatted}%` : `-${formatted}%`;
+  };
 
   const stats = [
     {
-      name: 'Total Calls Today',
+      name: 'Total Calls',
       value: teamStats.totalCalls,
-      change: '+12%',
-      changeType: 'positive',
+      change: formatChange(productivity.totalCallsChange),
+      changeType: (productivity.totalCallsChange || 0) >= 0 ? 'positive' : 'negative',
       icon: PhoneIcon,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50'
@@ -65,17 +108,17 @@ const ManagerDashboard = () => {
     {
       name: 'Completed Calls',
       value: teamStats.completedCalls,
-      change: '+8%',
-      changeType: 'positive',
+      change: formatChange(productivity.answeredCallsChange),
+      changeType: (productivity.answeredCallsChange || 0) >= 0 ? 'positive' : 'negative',
       icon: CheckCircleIcon,
       color: 'text-green-600',
       bgColor: 'bg-green-50'
     },
     {
       name: 'Conversion Rate',
-      value: `${teamStats.conversionRate}%`,
-      change: '+2.1%',
-      changeType: 'positive',
+      value: `${teamStats.conversionRate.toFixed(1)}%`,
+      change: formatChange(productivity.conversionRateChange),
+      changeType: (productivity.conversionRateChange || 0) >= 0 ? 'positive' : 'negative',
       icon: ChartBarIcon,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50'

@@ -38,4 +38,3 @@ echo "   Start:   sudo systemctl start cloudflared"
 echo "   Restart: sudo systemctl restart cloudflared"
 echo "   Logs:    sudo journalctl -u cloudflared -f"
 echo ""
-

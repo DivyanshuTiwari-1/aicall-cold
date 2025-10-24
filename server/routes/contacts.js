@@ -782,4 +782,79 @@ router.post('/bulk-delete', authenticateToken, async(req, res) => {
     }
 });
 
+// Bulk update contact status
+router.post('/bulk-update-status', authenticateToken, async(req, res) => {
+    try {
+        const { campaignId, status } = req.body;
+
+        if (!campaignId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campaign ID is required'
+            });
+        }
+
+        if (!status) {
+            return res.status(400).json({
+                success: false,
+                message: 'Status is required'
+            });
+        }
+
+        // Validate status value
+        const validStatuses = ['new', 'pending', 'contacted', 'retry', 'failed', 'dnc'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+            });
+        }
+
+        // Verify campaign belongs to organization
+        const campaignCheck = await query(
+            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2',
+            [campaignId, req.organizationId]
+        );
+
+        if (campaignCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        // Update all contacts in the campaign
+        const result = await query(`
+            UPDATE contacts
+            SET status = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE campaign_id = $2 AND organization_id = $3
+            RETURNING id
+        `, [status, campaignId, req.organizationId]);
+
+        const updatedCount = result.rowCount;
+
+        // Get current count of contacts with the new status
+        const countResult = await query(
+            'SELECT COUNT(*) as count FROM contacts WHERE campaign_id = $1 AND status = $2',
+            [campaignId, status]
+        );
+
+        logger.info(`Bulk updated ${updatedCount} contacts to status '${status}' for campaign ${campaignId}`);
+
+        res.json({
+            success: true,
+            message: `Successfully updated ${updatedCount} contacts to status '${status}'`,
+            updatedCount,
+            totalWithStatus: parseInt(countResult.rows[0].count)
+        });
+
+    } catch (error) {
+        logger.error('Bulk contact status update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update contact statuses'
+        });
+    }
+});
+
 module.exports = router;

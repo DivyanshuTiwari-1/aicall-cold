@@ -144,16 +144,24 @@ class AutomatedCallQueue {
                 SELECT ct.*, c.name as campaign_name
                 FROM contacts ct
                 JOIN campaigns c ON ct.campaign_id = c.id
+                LEFT JOIN dnc_registry dnc ON ct.phone = dnc.phone AND ct.organization_id = dnc.organization_id
                 WHERE ct.campaign_id = $1
-                AND ct.status IN ('pending', 'retry')
+                AND ct.status IN ('pending', 'retry', 'new')
                 AND (ct.last_contacted IS NULL OR ct.last_contacted < NOW() - INTERVAL '1 hour')
                 AND ct.retry_count < $2
+                AND dnc.id IS NULL
                 ORDER BY
                     CASE WHEN ct.status = 'retry' THEN 1 ELSE 2 END,
                     ct.priority DESC,
                     ct.created_at ASC
                 LIMIT 1
             `, [campaignId, this.retryAttempts]);
+
+            if (result.rows[0]) {
+                logger.info(`Selected contact ${result.rows[0].id} (${result.rows[0].phone}) for calling - status: ${result.rows[0].status}`);
+            } else {
+                logger.warn(`No contacts available for campaign ${campaignId} with status in ('pending', 'retry', 'new') that are not on DNC list`);
+            }
 
             return result.rows[0] || null;
         } catch (error) {
@@ -165,6 +173,24 @@ class AutomatedCallQueue {
     async initiateCall(campaignId, contact) {
         try {
             const { startOutboundCall } = require('./telephony');
+
+            // Double-check DNC status before initiating call
+            const dncCheck = await query(
+                'SELECT id FROM dnc_registry WHERE organization_id = $1 AND phone = $2',
+                [contact.organization_id, contact.phone]
+            );
+
+            if (dncCheck.rows.length > 0) {
+                logger.warn(`⚠️ Contact ${contact.id} (${contact.phone}) is on DNC list. Skipping call.`);
+                // Mark contact as DNC
+                await query(`
+                    UPDATE contacts
+                    SET status = 'dnc',
+                        last_contacted = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                `, [contact.id]);
+                throw new Error('Contact is on Do Not Call list');
+            }
 
             // Generate unique call ID
             const callId = `auto_${Date.now()}_${contact.id}`;

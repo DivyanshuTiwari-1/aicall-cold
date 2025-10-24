@@ -13,7 +13,7 @@ router.use(async (req, res, next) => {
     // AGI scripts don't have authentication
     // Try to get org ID from call_id in request
     if (!req.organizationId) {
-        const call_id = req.body?.call_id || req.query?.call_id;
+        const call_id = req.body?.call_id || req.query?.call_id || req.params?.call_id;
         if (call_id) {
             try {
                 // Look up organization_id from the call
@@ -22,14 +22,29 @@ router.use(async (req, res, next) => {
                     req.organizationId = result.rows[0].organization_id;
                     logger.debug(`Found organization_id ${req.organizationId} for call ${call_id}`);
                 } else {
-                    req.organizationId = 'default-org';
+                    // Call not found, try to get from first organization in system
+                    logger.warn(`Call ${call_id} not found, using fallback organization`);
+                    const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                    req.organizationId = orgResult.rows[0]?.id || 'default-org';
                 }
             } catch (error) {
                 logger.warn('Could not look up organization_id from call:', error.message);
-                req.organizationId = 'default-org';
+                // Fallback to first organization
+                try {
+                    const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                    req.organizationId = orgResult.rows[0]?.id || 'default-org';
+                } catch (orgError) {
+                    req.organizationId = 'default-org';
+                }
             }
         } else {
-            req.organizationId = 'default-org';
+            // No call_id provided, use first organization as fallback
+            try {
+                const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                req.organizationId = orgResult.rows[0]?.id || 'default-org';
+            } catch (error) {
+                req.organizationId = 'default-org';
+            }
         }
     }
     next();

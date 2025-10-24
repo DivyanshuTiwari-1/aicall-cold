@@ -2,13 +2,14 @@ const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Validation schemas
 const addDNCSchema = Joi.object({
-    phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
-    reason: Joi.string().valid('user_request', 'opt_out', 'complaint', 'invalid_number', 'other').required(),
+    phone: Joi.string().required(),
+    reason: Joi.string().allow('', null).optional(),
     source: Joi.string().valid('manual', 'user_request', 'api', 'import').default('manual')
 });
 
@@ -17,7 +18,7 @@ const bulkAddDNCSchema = Joi.object({
 });
 
 // Get DNC records
-router.get('/records', async(req, res) => {
+router.get('/records', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { page = 1, limit = 50, source, search } = req.query;
         const offset = (page - 1) * limit;
@@ -60,7 +61,8 @@ router.get('/records', async(req, res) => {
             reason: record.reason,
             source: record.source,
             addedDate: record.added_date,
-            addedBy: record.added_by
+            addedBy: record.added_by,
+            createdAt: record.added_date // For frontend compatibility
         }));
 
         res.json({
@@ -84,7 +86,7 @@ router.get('/records', async(req, res) => {
 });
 
 // Add to DNC
-router.post('/add', async(req, res) => {
+router.post('/add', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { error, value } = addDNCSchema.validate(req.body);
         if (error) {
@@ -114,9 +116,16 @@ router.post('/add', async(req, res) => {
             INSERT INTO dnc_registry (organization_id, phone, reason, source, added_by)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-        `, [req.organizationId, phone, reason, source, req.user.id]);
+        `, [req.organizationId, phone, reason, source, req.user?.id || null]);
 
         const dncRecord = result.rows[0];
+
+        // Update any contacts with this phone number to DNC status
+        await query(`
+            UPDATE contacts
+            SET status = 'dnc'
+            WHERE organization_id = $1 AND phone = $2
+        `, [req.organizationId, phone]);
 
         // Log audit event
         await query(`
@@ -143,7 +152,9 @@ router.post('/add', async(req, res) => {
                 phone: dncRecord.phone,
                 reason: dncRecord.reason,
                 source: dncRecord.source,
-                addedDate: dncRecord.added_date
+                addedDate: dncRecord.added_date,
+                addedBy: dncRecord.added_by,
+                createdAt: dncRecord.added_date // For frontend compatibility
             }
         });
 
@@ -157,7 +168,7 @@ router.post('/add', async(req, res) => {
 });
 
 // Remove from DNC
-router.delete('/remove/:id', async(req, res) => {
+router.delete('/remove/:id', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -179,6 +190,13 @@ router.delete('/remove/:id', async(req, res) => {
         await query(
             'DELETE FROM dnc_registry WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
         );
+
+        // Update contacts status back to pending (so they can be contacted again if needed)
+        await query(`
+            UPDATE contacts
+            SET status = 'pending'
+            WHERE organization_id = $1 AND phone = $2 AND status = 'dnc'
+        `, [req.organizationId, phone]);
 
         // Log audit event
         await query(`
@@ -211,7 +229,7 @@ router.delete('/remove/:id', async(req, res) => {
 });
 
 // Check DNC status
-router.get('/check/:phone', async(req, res) => {
+router.get('/check/:phone', authenticateToken, async(req, res) => {
     try {
         const { phone } = req.params;
 
@@ -227,7 +245,8 @@ router.get('/check/:phone', async(req, res) => {
                     id: result.rows[0].id,
                     reason: result.rows[0].reason,
                     source: result.rows[0].source,
-                    addedDate: result.rows[0].added_date
+                    addedDate: result.rows[0].added_date,
+                    createdAt: result.rows[0].added_date // For frontend compatibility
                 }
             });
         } else {
@@ -247,7 +266,7 @@ router.get('/check/:phone', async(req, res) => {
 });
 
 // Bulk add to DNC
-router.post('/bulk-add', async(req, res) => {
+router.post('/bulk-add', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { error, value } = bulkAddDNCSchema.validate(req.body);
         if (error) {
@@ -274,7 +293,14 @@ router.post('/bulk-add', async(req, res) => {
                     INSERT INTO dnc_registry (organization_id, phone, reason, source, added_by)
                     VALUES ($1, $2, $3, $4, $5)
                     RETURNING id
-                `, [req.organizationId, phone, 'bulk_import', 'api', req.user.id]);
+                `, [req.organizationId, phone, 'bulk_import', 'api', req.user?.id || null]);
+
+                // Update contacts with this phone to DNC status
+                await query(`
+                    UPDATE contacts
+                    SET status = 'dnc'
+                    WHERE organization_id = $1 AND phone = $2
+                `, [req.organizationId, phone]);
 
                 added.push(phone);
             } else {
@@ -321,7 +347,7 @@ router.post('/bulk-add', async(req, res) => {
 });
 
 // Get DNC statistics
-router.get('/stats', async(req, res) => {
+router.get('/stats', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const result = await query(`
             SELECT

@@ -2,16 +2,57 @@ const express = require('express');
 const Joi = require('joi');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Middleware to handle organization ID for AGI scripts
+router.use(async (req, res, next) => {
+    // Skip middleware if already authenticated
+    if (req.organizationId) {
+        return next();
+    }
+
+    // For AGI scripts, try to get organization from call_id
+    const call_id = req.body?.call_id || req.query?.call_id || req.params?.call_id;
+    if (call_id) {
+        try {
+            const result = await query('SELECT organization_id FROM calls WHERE id = $1', [call_id]);
+            if (result.rows.length > 0) {
+                req.organizationId = result.rows[0].organization_id;
+            } else {
+                const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                req.organizationId = orgResult.rows[0]?.id || 'default-org';
+            }
+        } catch (error) {
+            logger.warn('Could not lookup organization_id:', error.message);
+            try {
+                const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                req.organizationId = orgResult.rows[0]?.id || 'default-org';
+            } catch (orgError) {
+                req.organizationId = 'default-org';
+            }
+        }
+    } else {
+        try {
+            const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+            req.organizationId = orgResult.rows[0]?.id || 'default-org';
+        } catch (error) {
+            req.organizationId = 'default-org';
+        }
+    }
+    next();
+});
 
 // Validation schemas
 const scriptSchema = Joi.object({
     name: Joi.string().min(3).max(255).required(),
     type: Joi.string().valid('main_pitch', 'follow_up', 'objection_handling', 'closing').required(),
     content: Joi.string().min(10).max(5000).required(),
+    description: Joi.string().max(500).optional().allow('', null),
     variables: Joi.object().default({}),
     is_active: Joi.boolean().default(true),
+    status: Joi.string().valid('active', 'inactive').optional(), // Accept status field from frontend
     category: Joi.string().max(100).optional(),
     confidence_threshold: Joi.number().min(0).max(1).default(0.7)
 });
@@ -20,14 +61,16 @@ const updateScriptSchema = Joi.object({
     name: Joi.string().min(3).max(255).optional(),
     type: Joi.string().valid('main_pitch', 'follow_up', 'objection_handling', 'closing').optional(),
     content: Joi.string().min(10).max(5000).optional(),
+    description: Joi.string().max(500).optional().allow('', null),
     variables: Joi.object().optional(),
     is_active: Joi.boolean().optional(),
+    status: Joi.string().valid('active', 'inactive').optional(), // Accept status field from frontend
     category: Joi.string().max(100).optional(),
     confidence_threshold: Joi.number().min(0).max(1).optional()
 });
 
 // Create a new script
-router.post('/', async(req, res) => {
+router.post('/', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { error, value } = scriptSchema.validate(req.body);
         if (error) {
@@ -38,7 +81,13 @@ router.post('/', async(req, res) => {
             });
         }
 
-        const { name, type, content, variables, is_active, category, confidence_threshold } = value;
+        const { name, type, content, description, variables, status, category, confidence_threshold } = value;
+
+        // Map status to is_active if status is provided
+        let is_active = value.is_active;
+        if (status !== undefined) {
+            is_active = status === 'active';
+        }
 
         const result = await query(`
             INSERT INTO scripts (organization_id, name, type, content, variables, is_active, category, confidence_threshold)
@@ -48,7 +97,7 @@ router.post('/', async(req, res) => {
 
         const script = result.rows[0];
 
-        logger.info(`Script created: ${script.id} by user ${req.user.id}`);
+        logger.info(`Script created: ${script.id} by user ${req.user?.id || 'system'}`);
 
         res.status(201).json({
             success: true,
@@ -58,12 +107,15 @@ router.post('/', async(req, res) => {
                 name: script.name,
                 type: script.type,
                 content: script.content,
+                description: description || '', // Include description in response
                 variables: script.variables,
                 isActive: script.is_active,
+                status: script.is_active ? 'active' : 'inactive', // Return status for frontend
                 category: script.category,
                 confidenceThreshold: script.confidence_threshold,
                 createdAt: script.created_at,
-                updatedAt: script.updated_at
+                updatedAt: script.updated_at,
+                usageCount: 0 // Initialize usage count
             }
         });
 
@@ -77,7 +129,7 @@ router.post('/', async(req, res) => {
 });
 
 // Get all scripts
-router.get('/', async(req, res) => {
+router.get('/', authenticateToken, async(req, res) => {
     try {
         const { type, category, is_active, limit = 50, offset = 0 } = req.query;
 
@@ -116,12 +168,15 @@ router.get('/', async(req, res) => {
             name: script.name,
             type: script.type,
             content: script.content,
+            description: '', // Add empty description for compatibility
             variables: script.variables,
             isActive: script.is_active,
+            status: script.is_active ? 'active' : 'inactive', // Map is_active to status
             category: script.category,
             confidenceThreshold: script.confidence_threshold,
             createdAt: script.created_at,
-            updatedAt: script.updated_at
+            updatedAt: script.updated_at,
+            usageCount: 0 // Add usage count
         }));
 
         res.json({
@@ -144,7 +199,7 @@ router.get('/', async(req, res) => {
 });
 
 // Get single script
-router.get('/:id', async(req, res) => {
+router.get('/:id', authenticateToken, async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -170,12 +225,15 @@ router.get('/:id', async(req, res) => {
                 name: script.name,
                 type: script.type,
                 content: script.content,
+                description: '', // Add empty description for compatibility
                 variables: script.variables,
                 isActive: script.is_active,
+                status: script.is_active ? 'active' : 'inactive', // Map is_active to status
                 category: script.category,
                 confidenceThreshold: script.confidence_threshold,
                 createdAt: script.created_at,
-                updatedAt: script.updated_at
+                updatedAt: script.updated_at,
+                usageCount: 0 // Add usage count
             }
         });
 
@@ -189,7 +247,7 @@ router.get('/:id', async(req, res) => {
 });
 
 // Update script
-router.put('/:id', async(req, res) => {
+router.put('/:id', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -213,6 +271,15 @@ router.put('/:id', async(req, res) => {
                 message: 'Script not found'
             });
         }
+
+        // Map status to is_active if status is provided
+        if (value.status !== undefined) {
+            value.is_active = value.status === 'active';
+            delete value.status; // Remove status from value so it doesn't get added to SQL
+        }
+
+        // Remove description as it's not stored in the database (yet)
+        delete value.description;
 
         // Build update query dynamically
         const updates = [];
@@ -246,7 +313,7 @@ router.put('/:id', async(req, res) => {
 
         const script = result.rows[0];
 
-        logger.info(`Script updated: ${script.id} by user ${req.user.id}`);
+        logger.info(`Script updated: ${script.id} by user ${req.user?.id || 'system'}`);
 
         res.json({
             success: true,
@@ -256,11 +323,15 @@ router.put('/:id', async(req, res) => {
                 name: script.name,
                 type: script.type,
                 content: script.content,
+                description: '', // Add empty description for compatibility
                 variables: script.variables,
                 isActive: script.is_active,
+                status: script.is_active ? 'active' : 'inactive', // Map is_active to status
                 category: script.category,
                 confidenceThreshold: script.confidence_threshold,
-                updatedAt: script.updated_at
+                createdAt: script.created_at,
+                updatedAt: script.updated_at,
+                usageCount: 0 // Add usage count
             }
         });
 
@@ -274,7 +345,7 @@ router.put('/:id', async(req, res) => {
 });
 
 // Delete script
-router.delete('/:id', async(req, res) => {
+router.delete('/:id', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -323,8 +394,8 @@ router.post('/conversation', async(req, res) => {
             FROM calls c
             JOIN contacts ct ON c.contact_id = ct.id
             JOIN campaigns cp ON c.campaign_id = cp.id
-            WHERE c.id = $1 AND c.organization_id = $2
-        `, [call_id, req.organizationId]);
+            WHERE c.id = $1
+        `, [call_id]);
 
         if (callResult.rows.length === 0) {
             return res.status(404).json({
@@ -335,19 +406,19 @@ router.post('/conversation', async(req, res) => {
 
         const call = callResult.rows[0];
 
-        // Get main pitch script for the campaign
+        // Get main pitch script for the campaign (use call's organization_id)
         const scriptResult = await query(`
             SELECT content, variables, confidence_threshold
             FROM scripts
             WHERE organization_id = $1 AND type = 'main_pitch' AND is_active = true
             ORDER BY created_at DESC
             LIMIT 1
-        `, [req.organizationId]);
+        `, [call.organization_id]);
 
         // Query knowledge base for FAQ answers
         const knowledgeResult = await query(`
             SELECT question, answer, confidence
-            FROM knowledge_base
+            FROM knowledge_entries
             WHERE organization_id = $1 AND is_active = true
             AND (
                 LOWER(question) LIKE ANY($2) OR
@@ -356,7 +427,7 @@ router.post('/conversation', async(req, res) => {
             ORDER BY confidence DESC
             LIMIT 3
         `, [
-            req.organizationId,
+            call.organization_id,
             question.toLowerCase().split(' ').filter(w => w.length > 2).map(k => `%${k}%`),
             question.toLowerCase().split(' ').filter(w => w.length > 2).map(k => `%${k}%`)
         ]);

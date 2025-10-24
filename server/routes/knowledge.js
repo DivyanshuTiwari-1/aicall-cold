@@ -130,7 +130,7 @@ router.post('/', async(req, res) => {
         const { question, answer, category, confidence } = value;
 
         const result = await query(`
-      INSERT INTO knowledge_base (organization_id, question, answer, category, confidence)
+      INSERT INTO knowledge_entries (organization_id, question, answer, category, confidence)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `, [req.organizationId, question, answer, category, confidence]);
@@ -185,7 +185,7 @@ router.get('/', async(req, res) => {
 
         const result = await query(`
       SELECT *
-      FROM knowledge_base
+      FROM knowledge_entries
       ${whereClause}
       ORDER BY created_at DESC
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
@@ -244,7 +244,7 @@ router.put('/:id', async(req, res) => {
 
         // Check if entry exists
         const existingEntry = await query(
-            'SELECT id FROM knowledge_base WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
+            'SELECT id FROM knowledge_entries WHERE id = $1 AND organization_id = $2', [id, req.organizationId]
         );
 
         if (existingEntry.rows.length === 0) {
@@ -278,7 +278,7 @@ router.put('/:id', async(req, res) => {
         params.push(id, req.organizationId);
 
         const result = await query(`
-      UPDATE knowledge_base
+      UPDATE knowledge_entries
       SET ${updates.join(', ')}
       WHERE id = $${paramCount + 1} AND organization_id = $${paramCount + 2}
       RETURNING *
@@ -317,7 +317,7 @@ router.delete('/:id', async(req, res) => {
         const { id } = req.params;
 
         const result = await query(
-            'DELETE FROM knowledge_base WHERE id = $1 AND organization_id = $2 RETURNING id', [id, req.organizationId]
+            'DELETE FROM knowledge_entries WHERE id = $1 AND organization_id = $2 RETURNING id', [id, req.organizationId]
         );
 
         if (result.rows.length === 0) {
@@ -348,7 +348,7 @@ router.get('/categories', authenticateToken, requireRole('admin', 'manager', 'ag
     try {
         const categoriesQuery = `
             SELECT DISTINCT category, COUNT(*) as entry_count
-            FROM knowledge_base
+            FROM knowledge_entries
             WHERE organization_id = $1
             GROUP BY category
             ORDER BY category
@@ -392,7 +392,7 @@ router.get('/entries', authenticateToken, requireRole('admin', 'manager', 'agent
 
         const entriesQuery = `
             SELECT id, question, answer, category, confidence, created_at, updated_at
-            FROM knowledge_base
+            FROM knowledge_entries
             ${whereClause}
             ORDER BY created_at DESC
             LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}

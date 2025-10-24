@@ -1,11 +1,11 @@
 import {
-  ChartBarIcon,
-  ClockIcon,
-  PhoneIcon,
-  PlayIcon,
-  PlusIcon,
-  StopIcon,
-  UserGroupIcon
+    ChartBarIcon,
+    ClockIcon,
+    PhoneIcon,
+    PlayIcon,
+    PlusIcon,
+    StopIcon,
+    UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useState } from 'react';
@@ -231,33 +231,41 @@ const Campaigns = () => {
                                                 {campaign.callsMade || 0}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <div className="flex space-x-2">
-                                                    {campaign.automatedCallsActive ? (
-                                                        <button
-                                                            onClick={() => handleStopAutomatedCalls(campaign.id)}
-                                                            disabled={stopAutomatedCallsMutation.isLoading}
-                                                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400"
-                                                        >
-                                                            {stopAutomatedCallsMutation.isLoading ? (
-                                                                <LoadingSpinner size="sm" className="mr-1" />
-                                                            ) : (
-                                                                <StopIcon className="h-4 w-4 mr-1" />
-                                                            )}
-                                                            Stop
-                                                        </button>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => handleStartAutomatedCalls(campaign.id)}
-                                                            disabled={startAutomatedCallsMutation.isLoading || campaign.status !== 'active'}
-                                                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
-                                                        >
-                                                            {startAutomatedCallsMutation.isLoading ? (
-                                                                <LoadingSpinner size="sm" className="mr-1" />
-                                                            ) : (
-                                                                <PlayIcon className="h-4 w-4 mr-1" />
-                                                            )}
-                                                            Start Queue
-                                                        </button>
+                                                <div className="flex flex-col space-y-1">
+                                                    <div className="flex space-x-2">
+                                                        {campaign.automatedCallsActive ? (
+                                                            <button
+                                                                onClick={() => handleStopAutomatedCalls(campaign.id)}
+                                                                disabled={stopAutomatedCallsMutation.isLoading}
+                                                                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                                            >
+                                                                {stopAutomatedCallsMutation.isLoading ? (
+                                                                    <LoadingSpinner size="sm" className="mr-1" />
+                                                                ) : (
+                                                                    <StopIcon className="h-4 w-4 mr-1" />
+                                                                )}
+                                                                Stop Queue
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleStartAutomatedCalls(campaign.id)}
+                                                                disabled={startAutomatedCallsMutation.isLoading || campaign.status !== 'active' || campaign.contactCount === 0}
+                                                                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                                            >
+                                                                {startAutomatedCallsMutation.isLoading ? (
+                                                                    <LoadingSpinner size="sm" className="mr-1" />
+                                                                ) : (
+                                                                    <PlayIcon className="h-4 w-4 mr-1" />
+                                                                )}
+                                                                Start Queue
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {!campaign.automatedCallsActive && (campaign.status !== 'active' || campaign.contactCount === 0) && (
+                                                        <p className="text-xs text-gray-500">
+                                                            {campaign.status !== 'active' && 'Campaign must be active'}
+                                                            {campaign.contactCount === 0 && 'No contacts'}
+                                                        </p>
                                                     )}
                                                 </div>
                                             </td>

@@ -5,6 +5,40 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// Middleware to handle organization ID for AGI scripts
+router.use(async (req, res, next) => {
+    if (!req.organizationId) {
+        const call_id = req.body?.call_id || req.query?.call_id || req.params?.call_id;
+        if (call_id) {
+            try {
+                const result = await query('SELECT organization_id FROM calls WHERE id = $1', [call_id]);
+                if (result.rows.length > 0) {
+                    req.organizationId = result.rows[0].organization_id;
+                } else {
+                    const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                    req.organizationId = orgResult.rows[0]?.id || 'default-org';
+                }
+            } catch (error) {
+                logger.warn('Could not lookup organization_id:', error.message);
+                try {
+                    const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                    req.organizationId = orgResult.rows[0]?.id || 'default-org';
+                } catch (orgError) {
+                    req.organizationId = 'default-org';
+                }
+            }
+        } else {
+            try {
+                const orgResult = await query('SELECT id FROM organizations LIMIT 1');
+                req.organizationId = orgResult.rows[0]?.id || 'default-org';
+            } catch (error) {
+                req.organizationId = 'default-org';
+            }
+        }
+    }
+    next();
+});
+
 // Validation schemas
 const conversationSchema = Joi.object({
     call_id: Joi.string().uuid().required(),
@@ -32,8 +66,8 @@ router.post('/process', async(req, res) => {
             FROM calls c
             JOIN contacts ct ON c.contact_id = ct.id
             JOIN campaigns cp ON c.campaign_id = cp.id
-            WHERE c.id = $1 AND c.organization_id = $2
-        `, [call_id, req.organizationId]);
+            WHERE c.id = $1
+        `, [call_id]);
 
         if (callResult.rows.length === 0) {
             return res.status(404).json({
@@ -78,7 +112,7 @@ router.post('/process', async(req, res) => {
         const keywords = user_input.toLowerCase().split(' ').filter(word => word.length > 2);
         const knowledgeResult = await query(`
             SELECT question, answer, confidence, category
-            FROM knowledge_base
+            FROM knowledge_entries
             WHERE organization_id = $1 AND is_active = true
             AND (
                 LOWER(question) LIKE ANY($2) OR
@@ -135,6 +169,68 @@ router.post('/process', async(req, res) => {
             const name = call.first_name || '';
             response.answer = `I understand this is important to you${name ? ', ' + name : ''}. Let me connect you with someone who can help right away.`;
             response.should_fallback = true;
+        }
+
+        // Check for DNC request keywords
+        const dncKeywords = ['stop calling', 'don\'t call', 'do not call', 'remove me', 'take me off', 'unsubscribe', 'stop contacting'];
+        const userInputLower = user_input.toLowerCase();
+        const hasDNCRequest = dncKeywords.some(keyword => userInputLower.includes(keyword));
+
+        if (hasDNCRequest || (emotionAnalysis.action === 'apologize_and_exit')) {
+            // Add contact to DNC list
+            try {
+                // Get contact phone from call
+                const contactResult = await query(
+                    'SELECT phone FROM contacts WHERE id = $1',
+                    [call.contact_id]
+                );
+
+                if (contactResult.rows.length > 0) {
+                    const contactPhone = contactResult.rows[0].phone;
+
+                    // Check if not already on DNC list
+                    const dncCheck = await query(
+                        'SELECT id FROM dnc_registry WHERE organization_id = $1 AND phone = $2',
+                        [req.organizationId, contactPhone]
+                    );
+
+                    if (dncCheck.rows.length === 0) {
+                        // Add to DNC list
+                        await query(`
+                            INSERT INTO dnc_registry (organization_id, phone, reason, source, added_by)
+                            VALUES ($1, $2, $3, $4, NULL)
+                        `, [req.organizationId, contactPhone, 'user_request', 'api']);
+
+                        // Update contact status
+                        await query(
+                            'UPDATE contacts SET status = $1 WHERE id = $2',
+                            ['dnc', call.contact_id]
+                        );
+
+                        // Log compliance audit
+                        await query(`
+                            INSERT INTO compliance_audit_logs (organization_id, event_type, event_data, user_id)
+                            VALUES ($1, $2, $3, NULL)
+                        `, [
+                            req.organizationId,
+                            'dnc_added',
+                            JSON.stringify({
+                                phone: contactPhone,
+                                reason: 'user_request',
+                                source: 'ai_conversation',
+                                call_id: call_id
+                            })
+                        ]);
+
+                        logger.info(`Contact ${call.contact_id} (${contactPhone}) added to DNC list via AI conversation`);
+                    }
+                }
+            } catch (dncError) {
+                logger.error('Error adding contact to DNC:', dncError);
+            }
+
+            response.suggested_actions = response.suggested_actions || [];
+            response.suggested_actions.push('end_call', 'added_to_dnc');
         }
 
         // Add company context if available
@@ -446,10 +542,10 @@ class ConversationEngine {
                     response.suggested_actions.push('send_case_studies');
                     break;
                 case 'apologize_and_exit':
-                    response.answer = "I apologize for any inconvenience. I'll remove you from our calling list. Have a great day!";
+                    response.answer = "I apologize for any inconvenience. I'll remove you from our calling list right away. Have a great day!";
                     response.confidence = 0.95;
                     response.should_fallback = true;
-                    response.suggested_actions.push('add_to_dnc');
+                    response.suggested_actions.push('add_to_dnc', 'end_call');
                     break;
             }
         }

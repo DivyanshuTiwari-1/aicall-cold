@@ -91,9 +91,9 @@ const limiter = rateLimit({
     },
     // Use X-Forwarded-For for rate limiting (important for proxies/tunnels)
     keyGenerator: (req) => {
-        return req.headers['x-forwarded-for']?.split(',')[0] || 
-               req.headers['x-real-ip'] || 
-               req.ip || 
+        return req.headers['x-forwarded-for']?.split(',')[0] ||
+               req.headers['x-real-ip'] ||
+               req.ip ||
                req.connection.remoteAddress;
     }
 });

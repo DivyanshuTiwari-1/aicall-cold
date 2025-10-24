@@ -65,6 +65,21 @@ router.post('/start', authenticateToken, requireRole('agent'), async(req, res) =
 
         const contact = contactResult.rows[0];
 
+        // Check if contact is on DNC list
+        const dncCheck = await query(
+            'SELECT id, reason FROM dnc_registry WHERE organization_id = $1 AND phone = $2',
+            [req.organizationId, contact.phone]
+        );
+
+        if (dncCheck.rows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Contact is on Do Not Call list',
+                isDNC: true,
+                dncReason: dncCheck.rows[0].reason
+            });
+        }
+
         // Check if contact is assigned to user
         const assignmentCheck = await query(`
             SELECT id FROM lead_assignments
