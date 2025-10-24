@@ -169,13 +169,21 @@ const SimpleBrowserPhone = ({ contact, onClose }) => {
 
             // Step 7: Get microphone access first
             try {
+                // Check if getUserMedia is available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Browser does not support microphone access. Please use HTTPS or a modern browser.');
+                }
+                
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 localStreamRef.current = stream;
                 console.log('Microphone access granted');
             } catch (e) {
                 console.error('Microphone access denied:', e);
-                toast.error('Please allow microphone access to make calls');
-                throw new Error('Microphone access required');
+                const errorMsg = e.name === 'NotAllowedError' 
+                    ? 'Please allow microphone access to make calls'
+                    : e.message || 'Microphone access not available. Use HTTPS or check browser settings.';
+                toast.error(errorMsg, { duration: 5000 });
+                throw new Error(errorMsg);
             }
 
             // Step 8: Make the actual call to customer
