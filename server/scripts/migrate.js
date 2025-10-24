@@ -484,6 +484,39 @@ async function createTables() {
       )
     `);
 
+        // Phone numbers table
+        await query(`
+      CREATE TABLE IF NOT EXISTS phone_numbers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        phone_number VARCHAR(20) NOT NULL UNIQUE,
+        provider VARCHAR(50) NOT NULL DEFAULT 'telnyx',
+        country_code VARCHAR(2) NOT NULL,
+        capabilities JSONB DEFAULT '{"voice": true, "sms": false}'::jsonb,
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+        // Agent phone numbers table
+        await query(`
+      CREATE TABLE IF NOT EXISTS agent_phone_numbers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        agent_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        phone_number_id UUID NOT NULL REFERENCES phone_numbers(id) ON DELETE CASCADE,
+        organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        daily_limit INTEGER NOT NULL DEFAULT 100,
+        allowed_countries JSONB NOT NULL DEFAULT '["US", "CA"]'::jsonb,
+        calls_made_today INTEGER NOT NULL DEFAULT 0,
+        last_reset_date DATE DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(agent_id, phone_number_id)
+      )
+    `);
+
         // Create indexes for better performance
         await query(`CREATE INDEX IF NOT EXISTS idx_calls_organization_id ON calls(organization_id)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_calls_campaign_id ON calls(campaign_id)`);
@@ -531,6 +564,10 @@ async function createTables() {
         await query(`CREATE INDEX IF NOT EXISTS idx_webhook_configs_organization_id ON webhook_configs(organization_id)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_webhook_configs_event_type ON webhook_configs(event_type)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_webhook_logs_webhook_config_id ON webhook_logs(webhook_config_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_phone_numbers_organization_id ON phone_numbers(organization_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_phone_numbers_assigned_to ON phone_numbers(assigned_to)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_agent_phone_numbers_agent_id ON agent_phone_numbers(agent_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_agent_phone_numbers_phone_number_id ON agent_phone_numbers(phone_number_id)`);
 
         // Add reuse columns to contacts table if they don't exist
         try {
