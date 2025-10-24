@@ -11,7 +11,14 @@ class WebSocketService {
 
   connect(token) {
     this.token = token;
-    const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
+    // Use relative WebSocket URL for nginx proxy, or fallback to localhost
+    let wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
+
+    // If using relative path (starts with /), convert to full WebSocket URL
+    if (wsUrl.startsWith('/')) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${window.location.host}${wsUrl}`;
+    }
 
     try {
       this.ws = new WebSocket(`${wsUrl}?token=${token}`);

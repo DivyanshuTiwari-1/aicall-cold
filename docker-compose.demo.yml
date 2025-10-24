@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -28,12 +26,14 @@ services:
     container_name: ai-dialer-redis
     restart: always
     command: redis-server ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -73,11 +73,45 @@ services:
       dockerfile: Dockerfile
     container_name: ai-dialer-backend
     restart: always
-    env_file:
-      - .env.production
     environment:
       - NODE_ENV=production
       - PORT=3000
+      # Database Configuration
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-ai_dialer_prod}
+      - POSTGRES_USER=${POSTGRES_USER:-ai_dialer_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB:-ai_dialer_prod}
+      - DB_USER=${POSTGRES_USER:-ai_dialer_user}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      # Redis Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # Asterisk Configuration
+      - ASTERISK_HOST=asterisk
+      - ASTERISK_ARI_PORT=8088
+      - ARI_URL=http://asterisk:8088/ari
+      - ARI_USERNAME=${ARI_USERNAME:-ai-dialer}
+      - ARI_PASSWORD=${ARI_PASSWORD}
+      # JWT & Session
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - JWT_EXPIRES_IN=7d
+      - SESSION_SECRET=${SESSION_SECRET:-change-this-session-secret}
+      # CORS Configuration (use CLIENT_URL env var or default to localhost)
+      - CORS_ORIGIN=${CLIENT_URL:-http://localhost:3001}
+      - API_URL=${API_URL:-http://localhost:3000}
+      # Application Settings
+      - LOG_LEVEL=info
+      - MAX_CONCURRENT_CALLS=10
+      - VOICE_STACK=self_hosted
+      - TTS_ENGINE=espeak
+      # API Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELNYX_API_KEY=${TELNYX_API_KEY}
     volumes:
       - ./server/uploads:/app/uploads
       - ./server/logs:/app/logs
@@ -106,7 +140,8 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        REACT_APP_API_URL: ${API_URL:-http://localhost:3000}
+        REACT_APP_API_URL: /api/v1
+        REACT_APP_WS_URL: /ws
     container_name: ai-dialer-frontend
     restart: always
     ports:

@@ -132,7 +132,7 @@ services:
       - "3001:3001"
     environment:
       - REACT_APP_API_URL=http://localhost:3000/api/v1
-      - REACT_APP_WS_URL=ws://ai_dialer:3000
+      - REACT_APP_WS_URL=ws://localhost:3000
       - REACT_APP_API_BASE_URL=http://localhost:3000
     depends_on:
       ai_dialer:

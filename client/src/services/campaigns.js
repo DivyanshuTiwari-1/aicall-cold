@@ -1,11 +1,12 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000';
+ // Use REACT_APP_API_URL which is configured for nginx proxy
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api/v1';
 
 const campaignsAPI = {
     // Get all campaigns
     getCampaigns: async () => {
-        const response = await axios.get(`${API_BASE_URL}/api/v1/campaigns`, {
+        const response = await axios.get(`${API_BASE_URL}/campaigns`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
@@ -16,7 +17,7 @@ const campaignsAPI = {
 
     // Get single campaign
     getCampaign: async (id) => {
-        const response = await axios.get(`${API_BASE_URL}/api/v1/campaigns/${id}`, {
+        const response = await axios.get(`${API_BASE_URL}/campaigns/${id}`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
@@ -27,7 +28,7 @@ const campaignsAPI = {
 
     // Create campaign
     createCampaign: async (data) => {
-        const response = await axios.post(`${API_BASE_URL}/api/v1/campaigns`, data, {
+        const response = await axios.post(`${API_BASE_URL}/campaigns`, data, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'

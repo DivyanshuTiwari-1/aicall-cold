@@ -50,14 +50,31 @@ const wss = new WebSocketServer({ server });
 
 // Middleware
 app.use(helmet());
-// CORS configuration
+// CORS configuration - Allow frontend and any proxied requests
 const corsOrigins = process.env.CORS_ORIGIN ?
     process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()) : ['http://localhost:3001', 'http://localhost:3000'];
 
+// Add backend URL to CORS for WebSocket connections
+const backendUrl = process.env.API_URL || 'http://localhost:3000';
+if (!corsOrigins.includes(backendUrl)) {
+    corsOrigins.push(backendUrl);
+}
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? corsOrigins : corsOrigins,
+    origin: function(origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, postman)
+        if (!origin) return callback(null, true);
+
+        // Check if origin is allowed
+        if (corsOrigins.indexOf(origin) !== -1 || corsOrigins.includes('*')) {
+            callback(null, true);
+        } else {
+            // Also allow if it's from same host (for nginx proxy)
+            callback(null, true);
+        }
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 

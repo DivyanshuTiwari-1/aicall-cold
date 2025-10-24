@@ -12,6 +12,13 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Set API URL and WebSocket URL as build arguments
+ARG REACT_APP_API_URL=/api/v1
+ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+
+ARG REACT_APP_WS_URL=/ws
+ENV REACT_APP_WS_URL=${REACT_APP_WS_URL}
+
 # Build the app
 RUN npm run build
 

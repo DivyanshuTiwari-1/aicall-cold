@@ -90,6 +90,9 @@ API_URL=http://$PUBLIC_IP:3000
 CLIENT_URL=http://$PUBLIC_IP:3001
 FRONTEND_URL=http://$PUBLIC_IP:3001
 
+# CORS Configuration (allow requests from frontend and backend for WebSocket)
+CORS_ORIGIN=http://$PUBLIC_IP:3001,http://$PUBLIC_IP:3000,http://localhost:3001
+
 # Add your API keys here
 OPENAI_API_KEY=your-openai-api-key-here
 TELNYX_API_KEY=your-telnyx-api-key-here
@@ -127,6 +130,10 @@ echo ""
 export POSTGRES_PASSWORD=$DB_PASSWORD
 export REDIS_PASSWORD=$REDIS_PASSWORD
 export ARI_PASSWORD=$ARI_PASSWORD
+export CLIENT_URL=http://$PUBLIC_IP:3001
+export API_URL=http://$PUBLIC_IP:3000
+export JWT_SECRET=$JWT_SECRET
+export SESSION_SECRET=$SESSION_SECRET
 
 # Stop existing containers and remove old volumes
 echo "🛑 Stopping existing containers..."
@@ -252,4 +259,3 @@ echo "   - 8088 (Asterisk ARI)"
 echo "   - 10000-10100/UDP (RTP Media)"
 echo ""
 echo "========================================"
-
