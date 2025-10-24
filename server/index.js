@@ -81,13 +81,20 @@ app.use(cors({
 // Rate limiting - configurable via environment variables
 const limiter = rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes default
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // 100 requests default
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000, // Increased to 1000 requests default for production
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     // Skip rate limiting for health checks and certain endpoints
     skip: (req) => {
         return req.path === '/health' || req.path === '/api/health';
+    },
+    // Use X-Forwarded-For for rate limiting (important for proxies/tunnels)
+    keyGenerator: (req) => {
+        return req.headers['x-forwarded-for']?.split(',')[0] || 
+               req.headers['x-real-ip'] || 
+               req.ip || 
+               req.connection.remoteAddress;
     }
 });
 app.use('/api/', limiter);
