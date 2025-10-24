@@ -32,6 +32,23 @@ docker system prune -f
 echo "📥 Pulling latest code..."
 git pull origin main
 
+# Generate SSL certificates if not exist
+if [ ! -f ./ssl/nginx-selfsigned.crt ]; then
+    echo "🔐 Generating SSL certificates..."
+    mkdir -p ./ssl
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout ./ssl/nginx-selfsigned.key \
+        -out ./ssl/nginx-selfsigned.crt \
+        -subj "/C=US/ST=State/L=City/O=AI Dialer/OU=IT/CN=$PUBLIC_IP" 2>/dev/null
+    openssl dhparam -out ./ssl/dhparam.pem 2048 2>/dev/null
+    chmod 600 ./ssl/nginx-selfsigned.key
+    chmod 644 ./ssl/nginx-selfsigned.crt
+    chmod 644 ./ssl/dhparam.pem
+    echo "✅ SSL certificates generated"
+else
+    echo "✅ SSL certificates already exist"
+fi
+
 # Build and start services
 echo "🏗️  Building and starting services..."
 docker-compose -f docker-compose.demo.yml up -d --build
@@ -61,15 +78,24 @@ echo "======================================"
 echo "✅ DEPLOYMENT COMPLETE!"
 echo "======================================"
 echo ""
-echo "🌐 Frontend URL: http://$PUBLIC_IP:3001"
-echo "🔧 Backend URL:  http://$PUBLIC_IP:3000"
+echo "🌐 HTTP URL:  http://$PUBLIC_IP:3001"
+echo "🔒 HTTPS URL: https://$PUBLIC_IP:3443 (Self-signed - click 'Advanced' then 'Proceed')"
+echo "🔧 Backend:   http://$PUBLIC_IP:3000"
 echo ""
-echo "📝 Next steps:"
-echo "1. Open browser: http://$PUBLIC_IP:3001"
-echo "2. Register/Login to test"
-echo "3. For microphone access, run: bash start-cloudflare-tunnel.sh"
+echo "📝 Production URL Options:"
 echo ""
-echo "🔍 View logs: docker logs ai-dialer-backend -f"
-echo "🔄 Restart: docker-compose -f docker-compose.demo.yml restart"
+echo "Option 1: Self-Signed HTTPS (Available Now)"
+echo "  URL: https://$PUBLIC_IP:3443"
+echo "  ⚠️  Shows security warning (normal)"
+echo "  ✅ Microphone works after accepting certificate"
 echo ""
-
+echo "Option 2: Cloudflare Tunnel (Professional, No Warnings)"
+echo "  Run: bash start-cloudflare-tunnel.sh"
+echo "  ✅ Real HTTPS with valid certificate"
+echo "  ✅ No security warnings"
+echo ""
+echo "🔍 Useful commands:"
+echo "  View logs: docker logs ai-dialer-backend -f"
+echo "  Restart:   docker-compose -f docker-compose.demo.yml restart"
+echo "  Redeploy:  bash deploy-fast.sh"
+echo ""
