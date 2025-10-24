@@ -93,9 +93,45 @@ FRONTEND_URL=http://$PUBLIC_IP:3001
 # CORS Configuration (allow requests from frontend and backend for WebSocket)
 CORS_ORIGIN=http://$PUBLIC_IP:3001,http://$PUBLIC_IP:3000,http://localhost:3001
 
-# Add your API keys here
-OPENAI_API_KEY=your-openai-api-key-here
-TELNYX_API_KEY=your-telnyx-api-key-here
+# Telnyx Configuration (WebRTC for browser-based calls)
+TELNYX_SIP_USERNAME=${TELNYX_SIP_USERNAME:-userinfo63399}
+TELNYX_SIP_PASSWORD=${TELNYX_SIP_PASSWORD:--WUgqhX.ZXYM}
+TELNYX_CALLER_ID=${TELNYX_CALLER_ID:-+18058690081}
+TELNYX_PHONE_NUMBER=${TELNYX_PHONE_NUMBER:-+18058690081}
+TELNYX_DOMAIN=${TELNYX_DOMAIN:-sip.telnyx.com}
+
+# Telnyx Legacy (for Asterisk automated calls)
+TELNYX_USERNAME=${TELNYX_USERNAME:-info@pitchnhire.com}
+TELNYX_PASSWORD=${TELNYX_PASSWORD:-DxZU\$m4#GuFhRTp}
+TELNYX_SIP_URI=${TELNYX_SIP_URI:-sip:info@pitchnhire.com@sip.telnyx.com}
+TELNYX_IP_RANGE=${TELNYX_IP_RANGE:-66.109.0.0/16}
+TELNYX_DID=${TELNYX_DID:-+12025550123}
+TELNYX_TIMEOUT=${TELNYX_TIMEOUT:-30}
+
+# API Keys
+OPENAI_API_KEY=${OPENAI_API_KEY:-your-openai-api-key-here}
+TELNYX_API_KEY=${TELNYX_API_KEY:-your-telnyx-api-key-here}
+
+# Call Settings
+DEFAULT_CALL_TIMEOUT=30
+MAX_CALL_DURATION=180
+CALL_INTERVAL_MS=30000
+
+# TTS Configuration
+TTS_ENGINE=espeak
+TTS_LANGUAGE=en-US
+TTS_VOICE=en-us
+TTS_SPEED=150
+TTS_PITCH=50
+TTS_VOLUME=100
+TTS_CACHE_ENABLED=true
+
+# Features
+ENABLE_EMOTION_DETECTION=true
+ENABLE_VOICE_ANALYTICS=true
+ENABLE_CALL_RECORDING=true
+ENABLE_REAL_TIME_MONITORING=true
+ENABLE_AI_CONVERSATION=true
 EOF
 
 # Create production-specific ARI config

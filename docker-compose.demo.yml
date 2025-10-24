@@ -105,13 +105,53 @@ services:
       - CORS_ORIGIN=${CLIENT_URL:-http://localhost:3001}
       - API_URL=${API_URL:-http://localhost:3000}
       # Application Settings
-      - LOG_LEVEL=info
-      - MAX_CONCURRENT_CALLS=10
-      - VOICE_STACK=self_hosted
-      - TTS_ENGINE=espeak
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MAX_CONCURRENT_CALLS=${MAX_CONCURRENT_CALLS:-10}
+      - VOICE_STACK=${VOICE_STACK:-self_hosted}
+      - DEFAULT_CALL_TIMEOUT=${DEFAULT_CALL_TIMEOUT:-30}
+      - MAX_CALL_DURATION=${MAX_CALL_DURATION:-300}
+      - DEBUG=${DEBUG:-ai-dialer:*}
+      - ENABLE_DEBUG_LOGS=${ENABLE_DEBUG_LOGS:-true}
       # API Keys
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TELNYX_API_KEY=${TELNYX_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TELNYX_API_KEY=${TELNYX_API_KEY:-KEY0199FFA0EB5D4947F9F3CD455BE32997}
+      # Telnyx SIP Configuration
+      - TELNYX_SIP_USERNAME=${TELNYX_SIP_USERNAME:-userinfo63399}
+      - TELNYX_SIP_PASSWORD=${TELNYX_SIP_PASSWORD:--WUgqhX.ZXYM}
+      - TELNYX_CALLER_ID=${TELNYX_CALLER_ID:-+18058690081}
+      - TELNYX_PHONE_NUMBER=${TELNYX_PHONE_NUMBER:-+18058690081}
+      - TELNYX_DOMAIN=${TELNYX_DOMAIN:-sip.telnyx.com}
+      - TELNYX_SIP_URI=${TELNYX_SIP_URI:-userinfo63399@sip.telnyx.com}
+      - TELNYX_IP_RANGE=${TELNYX_IP_RANGE:-}
+      # TTS Configuration
+      - TTS_ENGINE=${TTS_ENGINE:-google}
+      - TTS_LANGUAGE=${TTS_LANGUAGE:-en-US}
+      - TTS_VOICE=${TTS_VOICE:-en-US-Wavenet-D}
+      - TTS_SPEED=${TTS_SPEED:-1.0}
+      - TTS_PITCH=${TTS_PITCH:-0.0}
+      - TTS_VOLUME=${TTS_VOLUME:-0.0}
+      - TTS_CACHE_ENABLED=${TTS_CACHE_ENABLED:-true}
+      - TTS_CACHE_TTL=${TTS_CACHE_TTL:-3600}
+      - TTS_CACHE_MAX_SIZE=${TTS_CACHE_MAX_SIZE:-1000}
+      # Features
+      - ENABLE_EMOTION_DETECTION=${ENABLE_EMOTION_DETECTION:-true}
+      - ENABLE_VOICE_ANALYTICS=${ENABLE_VOICE_ANALYTICS:-true}
+      - ENABLE_CALL_RECORDING=${ENABLE_CALL_RECORDING:-true}
+      - ENABLE_REAL_TIME_MONITORING=${ENABLE_REAL_TIME_MONITORING:-true}
+      - ENABLE_AI_CONVERSATION=${ENABLE_AI_CONVERSATION:-true}
+      # Rate Limiting
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      # Health Check
+      - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30000}
+      - HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-5000}
+      # Database Pool
+      - DB_POOL_MIN=${DB_POOL_MIN:-2}
+      - DB_POOL_MAX=${DB_POOL_MAX:-10}
+      - DB_POOL_IDLE_TIMEOUT=${DB_POOL_IDLE_TIMEOUT:-30000}
+      # Logging
+      - LOG_FILE=${LOG_FILE:-logs/app.log}
+      - ERROR_LOG_FILE=${ERROR_LOG_FILE:-logs/error.log}
     volumes:
       - ./server/uploads:/app/uploads
       - ./server/logs:/app/logs
