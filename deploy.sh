@@ -11,7 +11,7 @@ set -e
 # ============================================================================
 # 🔧 CONFIGURATION - CHANGE THIS TO YOUR DOMAIN
 # ============================================================================
-DOMAIN="yourdomain.com"  # ⚠️ CHANGE THIS TO YOUR ACTUAL DOMAIN
+DOMAIN=atsservice.site # ⚠️ CHANGE THIS TO YOUR ACTUAL DOMAIN
 
 # ============================================================================
 # DO NOT CHANGE ANYTHING BELOW THIS LINE
