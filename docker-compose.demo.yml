@@ -186,6 +186,9 @@ services:
     restart: always
     ports:
       - "3001:80"
+      - "3443:443"
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
     networks:
       - ai-dialer-network
     depends_on:
