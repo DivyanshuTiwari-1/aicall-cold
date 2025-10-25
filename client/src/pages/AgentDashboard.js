@@ -258,31 +258,37 @@ const AgentDashboard = () => {
     e.preventDefault();
 
     // Basic validation
-    if (!newLead.firstName || !newLead.phone) {
-      toast.error('Please fill in first name and phone number');
+    if (!newLead.firstName || !newLead.lastName || !newLead.phone) {
+      toast.error('Please fill in first name, last name and phone number');
       return;
     }
 
+    // Trim the phone number
+    const trimmedPhone = newLead.phone.trim();
+
     // Validate phone number format - allow digits, spaces, +, -, (, )
-    const phoneRegex = /^[\d+\-() ]+$/;
-    if (!phoneRegex.test(newLead.phone.trim())) {
+    const phoneRegex = /^[+]?[\d\-() ]+$/;
+    if (!phoneRegex.test(trimmedPhone)) {
       toast.error('Please enter a valid phone number (digits, +, -, (), and spaces only)');
       return;
     }
 
-    // Clean phone number - remove spaces, dashes, parentheses
-    const cleanedPhone = newLead.phone.replace(/[\s\-()]/g, '');
+    // Clean phone number - remove spaces, dashes, parentheses but keep the +
+    const cleanedPhone = trimmedPhone.replace(/[\s\-()]/g, '');
 
-    // Ensure phone number has at least 10 digits (excluding country code symbols)
-    const digitCount = cleanedPhone.replace(/\+/g, '').length;
+    // Count only digits (excluding + sign)
+    const digitCount = cleanedPhone.replace(/\D/g, '').length;
     if (digitCount < 10) {
       toast.error('Phone number must have at least 10 digits');
       return;
     }
 
+    // Ensure the phone number starts with + if it has a country code
+    const finalPhone = cleanedPhone.startsWith('+') ? cleanedPhone : cleanedPhone;
+
     addLeadMutation.mutate({
       ...newLead,
-      phone: cleanedPhone
+      phone: finalPhone
     });
   };
 
@@ -655,13 +661,14 @@ const AgentDashboard = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name
+                  Last Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={newLead.lastName}
                   onChange={(e) => setNewLead({ ...newLead, lastName: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  required
                 />
               </div>
 

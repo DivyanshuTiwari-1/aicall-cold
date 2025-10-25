@@ -19,6 +19,7 @@ const Calls = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { addListener, isConnected } = useWebSocket();
+  const isAgent = user?.role === 'agent';
   const [filters, setFilters] = useState({
     search: '',
     campaign: '',
@@ -208,7 +209,7 @@ const Calls = () => {
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Filters</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${isAgent ? 'lg:grid-cols-3' : 'lg:grid-cols-6'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <div className="relative">
@@ -222,29 +223,33 @@ const Calls = () => {
               />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Call Type</label>
-            <select
-              value={filters.callType}
-              onChange={(e) => setFilters({ ...filters, callType: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Calls</option>
-              <option value="automated">🤖 AI Automated</option>
-              <option value="manual">👤 Manual</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Campaign</label>
-            <select
-              value={filters.campaign}
-              onChange={(e) => setFilters({ ...filters, campaign: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Campaigns</option>
-              {/* Add campaign options here */}
-            </select>
-          </div>
+          {!isAgent && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Call Type</label>
+              <select
+                value={filters.callType}
+                onChange={(e) => setFilters({ ...filters, callType: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Calls</option>
+                <option value="automated">🤖 AI Automated</option>
+                <option value="manual">👤 Manual</option>
+              </select>
+            </div>
+          )}
+          {!isAgent && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Campaign</label>
+              <select
+                value={filters.campaign}
+                onChange={(e) => setFilters({ ...filters, campaign: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Campaigns</option>
+                {/* Add campaign options here */}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Outcome</label>
             <select
@@ -260,21 +265,23 @@ const Calls = () => {
               <option value="no_answer">No Answer</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Emotion</label>
-            <select
-              value={filters.emotion}
-              onChange={(e) => setFilters({ ...filters, emotion: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Emotions</option>
-              <option value="interested">Interested</option>
-              <option value="positive">Positive</option>
-              <option value="neutral">Neutral</option>
-              <option value="confused">Confused</option>
-              <option value="frustrated">Frustrated</option>
-            </select>
-          </div>
+          {!isAgent && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Emotion</label>
+              <select
+                value={filters.emotion}
+                onChange={(e) => setFilters({ ...filters, emotion: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Emotions</option>
+                <option value="interested">Interested</option>
+                <option value="positive">Positive</option>
+                <option value="neutral">Neutral</option>
+                <option value="confused">Confused</option>
+                <option value="frustrated">Frustrated</option>
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
             <select
