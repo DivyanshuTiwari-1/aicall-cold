@@ -20,7 +20,7 @@ import WarmTransferManager from '../components/WarmTransferManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { assignmentsAPI } from '../services/assignments';
-import contactsAPI from '../services/contacts';
+import { contactsAPI } from '../services/contacts';
 import { manualCallsAPI } from '../services/manualCalls';
 
 const AgentDashboard = () => {
