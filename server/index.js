@@ -19,8 +19,9 @@ const costOptimizationRoutes = require('./routes/cost-optimization');
 const knowledgeRoutes = require('./routes/knowledge');
 const mlRoutes = require('./routes/ml');
 const scriptRoutes = require('./routes/scripts');
-const conversationRoutes = require('./routes/conversation');
-const asteriskRoutes = require('./routes/asterisk');
+// Use simplified routes for cost-effective automated calling
+const conversationRoutes = require('./routes/conversation-simple');
+const asteriskRoutes = require('./routes/asterisk-simplified');
 const userRoutes = require('./routes/users');
 const assignmentRoutes = require('./routes/assignments');
 const manualCallRoutes = require('./routes/manualcalls');

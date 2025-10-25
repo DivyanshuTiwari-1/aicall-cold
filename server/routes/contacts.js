@@ -26,15 +26,15 @@ const upload = multer({
 
 // Validation schemas
 const contactSchema = Joi.object({
-    campaign_id: Joi.string().uuid().required(),
+    campaign_id: Joi.string().uuid().optional().allow(null, ''),
     first_name: Joi.string().min(1).max(100).required(),
-    last_name: Joi.string().max(100).optional(),
-    phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
-    email: Joi.string().email().optional(),
-    company: Joi.string().max(255).optional(),
-    title: Joi.string().max(255).optional(),
-    industry: Joi.string().max(100).optional(),
-    location: Joi.string().max(255).optional(),
+    last_name: Joi.string().max(100).optional().allow(null, ''),
+    phone: Joi.string().min(10).max(20).required(),
+    email: Joi.string().email().optional().allow(null, ''),
+    company: Joi.string().max(255).optional().allow(null, ''),
+    title: Joi.string().max(255).optional().allow(null, ''),
+    industry: Joi.string().max(100).optional().allow(null, ''),
+    location: Joi.string().max(255).optional().allow(null, ''),
     custom_fields: Joi.object().default({})
 });
 
@@ -67,7 +67,7 @@ router.post('/', authenticateToken, async(req, res) => {
             });
         }
 
-        const {
+        let {
             campaign_id,
             first_name,
             last_name,
@@ -80,27 +80,49 @@ router.post('/', authenticateToken, async(req, res) => {
             custom_fields
         } = value;
 
-        // Verify campaign belongs to organization
-        const campaignCheck = await query(
-            'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2', [campaign_id, req.organizationId]
-        );
+        // If campaign_id is not provided, try to get or create a default campaign
+        if (!campaign_id || campaign_id === '') {
+            // Check if a default campaign exists for this organization
+            const defaultCampaignCheck = await query(
+                'SELECT id FROM campaigns WHERE organization_id = $1 AND name = $2 LIMIT 1',
+                [req.organizationId, 'Manual Leads']
+            );
 
-        if (campaignCheck.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Campaign not found'
-            });
+            if (defaultCampaignCheck.rows.length > 0) {
+                campaign_id = defaultCampaignCheck.rows[0].id;
+            } else {
+                // Create a default campaign
+                const createDefaultCampaign = await query(`
+                    INSERT INTO campaigns (organization_id, name, description, status)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id
+                `, [req.organizationId, 'Manual Leads', 'Campaign for manually added leads', 'active']);
+                campaign_id = createDefaultCampaign.rows[0].id;
+                logger.info(`Created default campaign for organization ${req.organizationId}`);
+            }
+        } else {
+            // Verify campaign belongs to organization
+            const campaignCheck = await query(
+                'SELECT id FROM campaigns WHERE id = $1 AND organization_id = $2', [campaign_id, req.organizationId]
+            );
+
+            if (campaignCheck.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Campaign not found'
+                });
+            }
         }
 
-        // Check if contact already exists in this campaign
+        // Check if contact already exists in this organization (by phone)
         const existingContact = await query(
-            'SELECT id FROM contacts WHERE campaign_id = $1 AND phone = $2', [campaign_id, phone]
+            'SELECT id FROM contacts WHERE organization_id = $1 AND phone = $2', [req.organizationId, phone]
         );
 
         if (existingContact.rows.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'Contact with this phone number already exists in this campaign'
+                message: 'Contact with this phone number already exists'
             });
         }
 

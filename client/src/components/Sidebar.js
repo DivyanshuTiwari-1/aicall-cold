@@ -36,8 +36,8 @@ const Sidebar = ({ isOpen, onClose }) => {
   // Agent-specific simplified navigation
   const agentNavigation = [
     { name: 'Dashboard', href: '/agent', icon: HomeIcon, roles: ['agent'] },
-    { name: 'My Leads', href: '/agent', icon: ClipboardDocumentListIcon, roles: ['agent'] },
-    { name: 'Call History', href: '/calls', icon: PhoneIcon, roles: ['agent'] },
+    { name: 'My Leads', href: '/agent/leads', icon: ClipboardDocumentListIcon, roles: ['agent'] },
+    { name: 'Call History', href: '/agent/calls', icon: PhoneIcon, roles: ['agent'] },
     { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['agent'] },
   ];
 

@@ -1,14 +1,14 @@
 import {
-  ChartBarIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  PhoneIcon,
-  PhoneXMarkIcon,
-  PlusIcon,
-  StopIcon,
-  UserGroupIcon,
-  XCircleIcon,
-  XMarkIcon
+    ChartBarIcon,
+    CheckCircleIcon,
+    ClockIcon,
+    PhoneIcon,
+    PhoneXMarkIcon,
+    PlusIcon,
+    StopIcon,
+    UserGroupIcon,
+    XCircleIcon,
+    XMarkIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
@@ -105,7 +105,19 @@ const AgentDashboard = () => {
 
   // Add manual lead mutation
   const addLeadMutation = useMutation({
-    mutationFn: (data) => contactsAPI.createContact(data),
+    mutationFn: (data) => {
+      // Transform data to match API expectations
+      const apiData = {
+        first_name: data.firstName,
+        last_name: data.lastName || '',
+        phone: data.phone,
+        email: data.email || '',
+        company: data.company || '',
+        title: data.title || '',
+        campaign_id: '' // Will use default campaign on backend
+      };
+      return contactsAPI.createContact(apiData);
+    },
     onSuccess: (response) => {
       toast.success('Lead added successfully');
       setShowAddLeadModal(false);
@@ -246,19 +258,32 @@ const AgentDashboard = () => {
     e.preventDefault();
 
     // Basic validation
-    if (!newLead.firstName || !newLead.lastName || !newLead.phone) {
-      toast.error('Please fill in all required fields');
+    if (!newLead.firstName || !newLead.phone) {
+      toast.error('Please fill in first name and phone number');
       return;
     }
 
-    // Validate phone number format (basic check)
-    const phoneRegex = /^[0-9+\-() ]+$/;
-    if (!phoneRegex.test(newLead.phone)) {
-      toast.error('Please enter a valid phone number');
+    // Validate phone number format - allow digits, spaces, +, -, (, )
+    const phoneRegex = /^[\d+\-() ]+$/;
+    if (!phoneRegex.test(newLead.phone.trim())) {
+      toast.error('Please enter a valid phone number (digits, +, -, (), and spaces only)');
       return;
     }
 
-    addLeadMutation.mutate(newLead);
+    // Clean phone number - remove spaces, dashes, parentheses
+    const cleanedPhone = newLead.phone.replace(/[\s\-()]/g, '');
+
+    // Ensure phone number has at least 10 digits (excluding country code symbols)
+    const digitCount = cleanedPhone.replace(/\+/g, '').length;
+    if (digitCount < 10) {
+      toast.error('Phone number must have at least 10 digits');
+      return;
+    }
+
+    addLeadMutation.mutate({
+      ...newLead,
+      phone: cleanedPhone
+    });
   };
 
   const leads = leadsData?.leads || [];
@@ -630,14 +655,13 @@ const AgentDashboard = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name <span className="text-red-500">*</span>
+                  Last Name
                 </label>
                 <input
                   type="text"
                   value={newLead.lastName}
                   onChange={(e) => setNewLead({ ...newLead, lastName: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  required
                 />
               </div>
 

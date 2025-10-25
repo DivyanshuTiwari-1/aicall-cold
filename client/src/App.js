@@ -10,7 +10,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
+import AgentCalls from './pages/AgentCalls';
 import AgentDashboard from './pages/AgentDashboard';
+import AgentLeads from './pages/AgentLeads';
 import AgentNumberAssignment from './pages/AgentNumberAssignment';
 import AIIntelligence from './pages/AIIntelligence';
 import Analytics from './pages/Analytics';
@@ -139,6 +141,8 @@ function App() {
 
                 {/* Agent Routes */}
                 <Route path='agent' element={<AgentDashboard />} />
+                <Route path='agent/leads' element={<AgentLeads />} />
+                <Route path='agent/calls' element={<AgentCalls />} />
 
                 {/* Admin/Manager Routes */}
                 <Route path='dashboard' element={<Dashboard />} />
