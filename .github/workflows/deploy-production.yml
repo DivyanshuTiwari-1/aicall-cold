@@ -1,0 +1,152 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+    inputs:
+      skip_backup:
+        description: 'Skip database backup'
+        required: false
+        default: 'false'
+
+jobs:
+  deploy:
+    name: Deploy to Production Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📋 Deployment Info
+        run: |
+          echo "🚀 Starting deployment to production"
+          echo "📦 Commit: ${{ github.sha }}"
+          echo "👤 Author: ${{ github.actor }}"
+          echo "💬 Message: ${{ github.event.head_commit.message }}"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+
+      - name: 🔐 Validate SSH Configuration
+        run: |
+          if [ -z "${{ secrets.PRODUCTION_HOST }}" ]; then
+            echo "❌ ERROR: PRODUCTION_HOST secret not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRODUCTION_USER }}" ]; then
+            echo "❌ ERROR: PRODUCTION_USER secret not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRODUCTION_SSH_KEY }}" ]; then
+            echo "❌ ERROR: PRODUCTION_SSH_KEY secret not set"
+            exit 1
+          fi
+          echo "✅ All required secrets are configured"
+
+      - name: 🚀 Deploy to Production
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          command_timeout: 20m
+          script: |
+            set -e
+
+            # Navigate to application directory
+            APP_DIR="${{ secrets.PRODUCTION_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="/home/${{ secrets.PRODUCTION_USER }}/aicall"
+            fi
+
+            echo "📂 Navigating to: $APP_DIR"
+            cd "$APP_DIR"
+
+            # Check if update script exists
+            if [ ! -f "./update-production-auto.sh" ]; then
+              echo "⚠️  Auto script not found, using standard script..."
+              if [ ! -f "./update-production.sh" ]; then
+                echo "❌ No update script found!"
+                exit 1
+              fi
+              chmod +x ./update-production.sh
+              bash ./update-production.sh <<< "yes"
+            else
+              echo "✅ Using automated update script..."
+              chmod +x ./update-production-auto.sh
+              bash ./update-production-auto.sh
+            fi
+
+            echo ""
+            echo "✅ Deployment completed successfully!"
+            echo "🎉 Production is now running the latest code"
+
+      - name: 🔍 Verify Deployment
+        if: success()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          script: |
+            APP_DIR="${{ secrets.PRODUCTION_APP_DIR || '/home/ubuntu/aicall' }}"
+            cd "$APP_DIR"
+
+            echo "📊 Final Service Status:"
+            docker-compose -f docker-compose.demo.yml ps
+
+            echo ""
+            echo "🔍 Testing endpoints..."
+
+            # Test backend
+            if curl -f -s http://localhost:3000/health > /dev/null; then
+              echo "✅ Backend is responding"
+            else
+              echo "⚠️  Backend health check failed"
+            fi
+
+            # Test frontend
+            if curl -f -s http://localhost:3001 > /dev/null; then
+              echo "✅ Frontend is responding"
+            else
+              echo "⚠️  Frontend health check failed"
+            fi
+
+      - name: 📊 Deployment Summary
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ ========================================="
+            echo "✅ DEPLOYMENT SUCCESSFUL!"
+            echo "✅ ========================================="
+            echo ""
+            echo "📦 Deployed commit: ${{ github.sha }}"
+            echo "💬 Commit message: ${{ github.event.head_commit.message }}"
+            echo "👤 Deployed by: ${{ github.actor }}"
+            echo "⏰ Time: $(date)"
+            echo ""
+            echo "🌐 Your production app should now be updated!"
+          else
+            echo "❌ ========================================="
+            echo "❌ DEPLOYMENT FAILED!"
+            echo "❌ ========================================="
+            echo ""
+            echo "Please check the logs above for details."
+            echo ""
+            echo "Common issues:"
+            echo "  1. SSH connection failed - check secrets and server access"
+            echo "  2. Git pull failed - check repository access on server"
+            echo "  3. Docker build failed - check Dockerfile and dependencies"
+            echo "  4. Health check failed - check application logs on server"
+            echo ""
+            echo "To investigate:"
+            echo "  ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}"
+            echo "  cd ${{ secrets.PRODUCTION_APP_DIR || '/home/ubuntu/aicall' }}"
+            echo "  docker-compose -f docker-compose.demo.yml logs"
+            exit 1
+          fi
