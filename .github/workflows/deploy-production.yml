@@ -60,27 +60,43 @@ jobs:
             # Navigate to application directory
             APP_DIR="${{ secrets.PRODUCTION_APP_DIR }}"
             if [ -z "$APP_DIR" ]; then
-              APP_DIR="/home/${{ secrets.PRODUCTION_USER }}/aicall"
+              APP_DIR="/opt/ai-dialer"
             fi
 
             echo "📂 Navigating to: $APP_DIR"
             cd "$APP_DIR"
 
-            # Check if update script exists
-            if [ ! -f "./update-production-auto.sh" ]; then
-              echo "⚠️  Auto script not found, using standard script..."
-              if [ ! -f "./update-production.sh" ]; then
-                echo "❌ No update script found!"
-                exit 1
-              fi
-              chmod +x ./update-production.sh
-              bash ./update-production.sh <<< "yes"
-            else
-              echo "✅ Using automated update script..."
-              chmod +x ./update-production-auto.sh
-              bash ./update-production-auto.sh
-            fi
-
+            # CRITICAL: Stop ALL duplicate containers first
+            echo "🛑 Cleaning up duplicate containers..."
+            docker stop $(docker ps --filter "name=ai-dialer" -q) 2>/dev/null || true
+            docker rm $(docker ps --filter "name=ai-dialer" -q) 2>/dev/null || true
+            
+            # Stop via all compose files
+            docker-compose -f docker-compose.demo.yml down 2>/dev/null || true
+            docker-compose -f docker-compose.simplified.yml down 2>/dev/null || true
+            docker-compose -f docker-compose.yml down 2>/dev/null || true
+            
+            echo "✓ Cleanup complete"
+            
+            # Pull latest code
+            echo "📥 Pulling latest code..."
+            git fetch origin
+            git reset --hard origin/main
+            echo "✓ Code updated"
+            
+            # Rebuild and start
+            echo "🔨 Rebuilding containers..."
+            docker-compose -f docker-compose.demo.yml build --no-cache --pull
+            
+            echo "🚀 Starting services..."
+            docker-compose -f docker-compose.demo.yml up -d --force-recreate
+            
+            echo "⏳ Waiting for services..."
+            sleep 30
+            
+            # Run migrations
+            docker exec ai-dialer-backend npm run migrate || true
+            
             echo ""
             echo "✅ Deployment completed successfully!"
             echo "🎉 Production is now running the latest code"

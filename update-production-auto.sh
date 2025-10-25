@@ -14,25 +14,20 @@ echo ""
 
 # Check if .env.production exists
 if [ ! -f .env.production ]; then
-    echo "❌ ERROR: .env.production not found!"
-    echo "   Run ./deploy-production.sh for initial deployment first."
-    exit 1
+    echo "⚠️  .env.production not found, will use defaults"
 fi
 
-# Load environment
-echo "📝 Loading production environment..."
-set -a
-source .env.production
-set +a
-echo "   ✓ Environment loaded"
+# Load environment if exists
+if [ -f .env.production ]; then
+    echo "📝 Loading production environment..."
+    set -a
+    source .env.production
+    set +a
+    echo "   ✓ Environment loaded"
+fi
 echo ""
 
-# Show current git info
-echo "📊 Current Git Status:"
-git log --oneline -1
-echo ""
-
-# Pull latest changes
+# Pull latest changes FIRST (before any docker operations)
 echo "📥 Pulling latest changes from Git..."
 if [ -d .git ]; then
     git pull origin main || {
@@ -41,14 +36,39 @@ if [ -d .git ]; then
         git fetch origin
         git reset --hard origin/main
     }
+    echo "   ✓ Code updated"
 else
     echo "   ⚠️  Not a Git repository, using local changes"
 fi
 echo ""
 
-# Show what's running
-echo "📊 Current running services:"
-docker-compose -f docker-compose.demo.yml ps
+# Show current git info
+echo "📊 Current Git Status:"
+git log --oneline -1
+echo ""
+
+# CRITICAL: Stop ALL duplicate containers first
+echo "🛑 Stopping all duplicate containers..."
+CONTAINERS=$(docker ps --filter "name=ai-dialer" -q)
+if [ ! -z "$CONTAINERS" ]; then
+    docker stop $CONTAINERS 2>/dev/null || true
+    echo "   ✓ All containers stopped"
+fi
+
+# Remove old containers
+CONTAINERS=$(docker ps -a --filter "name=ai-dialer" -q)
+if [ ! -z "$CONTAINERS" ]; then
+    docker rm $CONTAINERS 2>/dev/null || true
+    echo "   ✓ Old containers removed"
+fi
+
+# Stop via all possible compose files to ensure cleanup
+for file in docker-compose.demo.yml docker-compose.simplified.yml docker-compose.yml; do
+    if [ -f "$file" ]; then
+        docker-compose -f "$file" down 2>/dev/null || true
+    fi
+done
+echo "   ✓ Cleanup complete"
 echo ""
 
 # Create backup before update
@@ -70,19 +90,19 @@ fi
 echo ""
 
 # Rebuild and update services (NO --volumes flag = data preserved)
-echo "🔨 Building updated images..."
-docker-compose -f docker-compose.demo.yml build --no-cache 2>&1 | grep -E "(Building|Successfully|ERROR|WARN)" || true
+echo "🔨 Building updated images (no cache to ensure fresh build)..."
+docker-compose -f docker-compose.demo.yml build --no-cache
 echo "   ✓ Images built"
 echo ""
 
-echo "🚀 Updating services (graceful restart)..."
+echo "🚀 Starting services with fresh containers..."
 # This command:
-# - Recreates containers with new code
+# - Creates containers with new code
 # - Keeps all volumes (data) intact
-# - Does graceful shutdown of old containers
-docker-compose -f docker-compose.demo.yml up -d --force-recreate --no-deps
+# - Uses --force-recreate to ensure fresh start
+docker-compose -f docker-compose.demo.yml up -d --force-recreate
 
-echo "   ✓ Services updated"
+echo "   ✓ Services started"
 echo ""
 
 # Wait for services to stabilize

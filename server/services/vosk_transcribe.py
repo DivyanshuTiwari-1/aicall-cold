@@ -65,3 +65,6 @@ if __name__ == "__main__":
     result = transcribe_audio(audio_file, model_path)
     print(json.dumps(result))
 
+
+
+
