@@ -63,4 +63,3 @@ echo "   https://atsservice.site"
 echo ""
 echo "Press Ctrl+Shift+R to hard refresh!"
 echo "======================================"
-
