@@ -29,6 +29,12 @@ const Header = ({ onMenuClick }) => {
     setIsUserMenuOpen(false);
   };
 
+  const handleSettingsClick = () => {
+    navigate('/settings');
+  };
+
+  const isAgent = user?.roleType === 'agent';
+
   return (
     <header className='bg-white shadow-sm border-b border-gray-200'>
       <div className='flex items-center justify-between h-16 px-6'>
@@ -39,35 +45,46 @@ const Header = ({ onMenuClick }) => {
           >
             <Bars3Icon className='h-6 w-6' />
           </button>
-          {/* Logo and Brand */}
-          <div className='flex items-center ml-4'>
-            <div className='flex items-center'>
-              <div className='w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3'>
-                <svg className='w-5 h-5 text-white' fill='currentColor' viewBox='0 0 20 20'>
-                  <path d='M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z' />
-                </svg>
-              </div>
-              <div>
-                <h1 className='text-xl font-bold text-gray-900'> AI Dialer Pro </h1>
-                <p className='text-sm text-gray-500'> Emotion - Aware Voice Intelligence </p>
+          {/* Logo and Brand - Only for non-agents */}
+          {!isAgent && (
+            <div className='flex items-center ml-4'>
+              <div className='flex items-center'>
+                <div className='w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3'>
+                  <svg className='w-5 h-5 text-white' fill='currentColor' viewBox='0 0 20 20'>
+                    <path d='M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z' />
+                  </svg>
+                </div>
+                <div>
+                  <h1 className='text-xl font-bold text-gray-900'> AI Dialer Pro </h1>
+                  <p className='text-sm text-gray-500'> Emotion - Aware Voice Intelligence </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Status Metrics and User Menu */}
         <div className='flex items-center space-x-6'>
-          <div className='text-right'>
-            <p className='text-sm text-gray-500'> Credits Remaining </p>
-            <p className='text-lg font-semibold text-blue-600'> 8, 450 </p>
-          </div>
-          <div className='text-right'>
-            <p className='text-sm text-gray-500'> Avg CSAT </p>
-            <p className='text-lg font-semibold text-green-600'> 4.2 / 5.0 </p>
-          </div>
+          {/* Credits and CSAT - Only for non-agents */}
+          {!isAgent && (
+            <>
+              <div className='text-right'>
+                <p className='text-sm text-gray-500'> Credits Remaining </p>
+                <p className='text-lg font-semibold text-blue-600'> 8, 450 </p>
+              </div>
+              <div className='text-right'>
+                <p className='text-sm text-gray-500'> Avg CSAT </p>
+                <p className='text-lg font-semibold text-green-600'> 4.2 / 5.0 </p>
+              </div>
+            </>
+          )}
 
           {/* Settings Button */}
-          <button className='p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100'>
+          <button
+            onClick={handleSettingsClick}
+            className='p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+            title='Settings'
+          >
             <Cog6ToothIcon className='h-6 w-6' />
           </button>
 

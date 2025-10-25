@@ -214,22 +214,47 @@ try {
     ]);
 
     // Get initial script for the campaign
+    agi_log("Fetching script for call_id: $call_id, campaign_id: $campaign_id");
     $script_response = make_api_get('/scripts/conversation?call_id=' . urlencode($call_id) . '&conversation_type=main_pitch');
 
-    if (!$script_response || !$script_response['success']) {
-        agi_log("Failed to get initial script");
-        $initial_text = 'Hello, this is an AI assistant calling on behalf of our company.';
+    if (!$script_response || !isset($script_response['success']) || !$script_response['success']) {
+        agi_log("Failed to get initial script - using fallback");
+        $initial_text = 'Hello, this is an AI assistant calling on behalf of our company. How are you today?';
     } else {
-        $initial_text = $script_response['main_script'] ?? 'Hello, this is an AI assistant calling on behalf of our company.';
+        // Extract the script content from the response
+        $initial_text = $script_response['main_script'] ?? $script_response['script_content'] ?? 'Hello, this is an AI assistant calling on behalf of our company.';
+        agi_log("Successfully retrieved script from API");
+
+        // Log contact info if available
+        if (isset($script_response['contact'])) {
+            $contact = $script_response['contact'];
+            agi_log("Contact: " . ($contact['first_name'] ?? '') . " " . ($contact['last_name'] ?? '') . " from " . ($contact['company'] ?? 'Unknown'));
+        }
     }
 
     // Play initial greeting/script
     agi_log("Playing initial script: " . substr($initial_text, 0, 100) . "...");
+    agi_log("Script length: " . strlen($initial_text) . " characters");
+
+    // Log the conversation start
+    make_api_request('/asterisk/call-event', [
+        'call_id' => $call_id,
+        'event_type' => 'ai_conversation',
+        'event_data' => [
+            'ai_response' => $initial_text,
+            'type' => 'greeting',
+            'timestamp' => date('c')
+        ],
+        'timestamp' => date('c')
+    ]);
+
     play_tts($initial_text);
 
     // Main conversation loop
     $conversation_turn = 0;
     $call_active = true;
+    $consecutive_failures = 0;
+    $max_consecutive_failures = 3;
 
     while ($call_active && $conversation_turn < $max_conversation_turns) {
         $conversation_turn++;
@@ -249,6 +274,18 @@ try {
             if ($caller_text) {
                 agi_log("Caller said: " . substr($caller_text, 0, 100) . "...");
 
+                // Log the user input first
+                make_api_request('/asterisk/call-event', [
+                    'call_id' => $call_id,
+                    'event_type' => 'ai_conversation',
+                    'event_data' => [
+                        'user_input' => $caller_text,
+                        'turn' => $conversation_turn,
+                        'timestamp' => date('c')
+                    ],
+                    'timestamp' => date('c')
+                ]);
+
                 // Process conversation with AI
                 $conversation_response = make_api_request('/conversation/process', [
                     'call_id' => $call_id,
@@ -260,14 +297,19 @@ try {
                 ]);
 
                 if ($conversation_response && $conversation_response['success']) {
-                    $ai_response = $conversation_response['answer'];
+                    $ai_response = $conversation_response['answer'] ?? $conversation_response['ai_response'] ?? '';
                     $confidence = $conversation_response['confidence'] ?? 0;
                     $should_fallback = $conversation_response['should_fallback'] ?? false;
 
                     agi_log("AI Response (confidence: $confidence): " . substr($ai_response, 0, 100) . "...");
 
+                    // Reset failure counter on successful response
+                    $consecutive_failures = 0;
+
                     // Play AI response
-                    play_tts($ai_response);
+                    if (!empty($ai_response)) {
+                        play_tts($ai_response);
+                    }
 
                     // Check if we should end the call
                     if ($should_fallback || $confidence < 0.3) {
@@ -278,18 +320,56 @@ try {
                     // Check for closing indicators
                     if (isset($conversation_response['suggested_actions'])) {
                         $actions = $conversation_response['suggested_actions'];
-                        if (in_array('schedule_meeting', $actions) || in_array('end_call', $actions)) {
-                            agi_log("Call completion suggested by AI");
+                        if (in_array('schedule_meeting', $actions) || in_array('end_call', $actions) || in_array('added_to_dnc', $actions)) {
+                            agi_log("Call completion suggested by AI - actions: " . implode(', ', $actions));
                             $call_active = false;
                         }
                     }
                 } else {
-                    agi_log("Failed to process conversation");
-                    play_tts("I'm sorry, I didn't catch that. Could you please repeat?");
+                    agi_log("Failed to process conversation - response: " . json_encode($conversation_response));
+                    $consecutive_failures++;
+
+                    // Check if we've hit max consecutive failures
+                    if ($consecutive_failures >= $max_consecutive_failures) {
+                        agi_log("ERROR: Max consecutive failures ($max_consecutive_failures) reached, ending call");
+                        play_tts("I apologize, but I'm experiencing technical difficulties. Please try calling back later.");
+                        $call_active = false;
+                    } else {
+                        $fallback_response = "I'm sorry, I didn't catch that. Could you please repeat?";
+                        play_tts($fallback_response);
+
+                        // Log the fallback response
+                        make_api_request('/asterisk/call-event', [
+                            'call_id' => $call_id,
+                            'event_type' => 'ai_conversation',
+                            'event_data' => [
+                                'ai_response' => $fallback_response,
+                                'type' => 'fallback',
+                                'turn' => $conversation_turn,
+                                'consecutive_failures' => $consecutive_failures,
+                                'timestamp' => date('c')
+                            ],
+                            'timestamp' => date('c')
+                        ]);
+                    }
                 }
             } else {
                 agi_log("No speech detected or transcription failed");
-                play_tts("I'm sorry, I didn't hear anything. Could you please speak up?");
+                $no_input_response = "I'm sorry, I didn't hear anything. Could you please speak up?";
+                play_tts($no_input_response);
+
+                // Log no input event
+                make_api_request('/asterisk/call-event', [
+                    'call_id' => $call_id,
+                    'event_type' => 'ai_conversation',
+                    'event_data' => [
+                        'ai_response' => $no_input_response,
+                        'type' => 'no_input',
+                        'turn' => $conversation_turn,
+                        'timestamp' => date('c')
+                    ],
+                    'timestamp' => date('c')
+                ]);
             }
         } else {
             agi_log("No response recorded or file too small");

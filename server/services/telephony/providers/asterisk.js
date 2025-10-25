@@ -19,18 +19,21 @@ async function connectAri() {
     }
 }
 
-async function startOutboundCall({ callId, toPhone, campaignId }) {
+async function startOutboundCall({ callId, toPhone, campaignId, fromNumber }) {
     // Originate call via Asterisk ARI to Telnyx endpoint
     const client = await connectAri();
     try {
         // Use telnyx_outbound from pjsip.conf
         const endpoint = `PJSIP/${toPhone}@telnyx_outbound`;
 
+        // Use provided fromNumber or fall back to environment variable
+        const callerId = fromNumber || process.env.TELNYX_DID || '+12025550123';
+
         await client.channels.originate({
             endpoint: endpoint,
             app: 'ai-dialer-stasis',
             appArgs: [callId, toPhone, campaignId || 'unknown'].join(','),
-            callerId: process.env.TELNYX_DID || '+12025550123'
+            callerId: callerId
         });
 
         logger.info(`✅ ARI originate requested for ${toPhone} via Telnyx, callId: ${callId}, campaignId: ${campaignId}`);

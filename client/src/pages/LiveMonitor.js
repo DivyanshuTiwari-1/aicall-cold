@@ -42,11 +42,12 @@ const LiveMonitor = () => {
     enabled: !!selectedCall,
   });
 
-  // Fetch conversation context
+  // Fetch conversation context with polling for active automated calls
   const { data: conversationData, isLoading: conversationLoading } = useQuery({
     queryKey: ['conversation', selectedCall?.id],
     queryFn: () => conversationAPI.getConversationContext(selectedCall.id),
     enabled: !!selectedCall,
+    refetchInterval: (selectedCall?.automated && selectedCall?.status === 'in_progress') ? 5000 : false,
   });
 
   // Update call status mutation
@@ -92,9 +93,52 @@ const LiveMonitor = () => {
   // Load conversation history when call is selected
   useEffect(() => {
     if (selectedCall && conversationData) {
-      setConversationHistory(conversationData.history || []);
+      const history = conversationData.history || [];
+      // Transform to format expected by CallDetails component
+      const formattedHistory = [];
+
+      history.forEach(turn => {
+        // Add user message if exists
+        if (turn.user_input) {
+          formattedHistory.push({
+            type: 'user',
+            message: turn.user_input,
+            content: turn.user_input,
+            timestamp: turn.timestamp,
+            turn: turn.turn,
+            emotion: turn.emotion
+          });
+        }
+        // Add AI response if exists
+        if (turn.ai_response) {
+          formattedHistory.push({
+            type: 'ai',
+            message: turn.ai_response,
+            content: turn.ai_response,
+            timestamp: turn.timestamp,
+            turn: turn.turn,
+            confidence: turn.confidence,
+            emotion: turn.emotion,
+            intent: turn.intent
+          });
+        }
+      });
+
+      setConversationHistory(formattedHistory);
     }
   }, [selectedCall, conversationData]);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    if (conversationHistory.length > 0) {
+      const container = document.getElementById('conversation-container');
+      if (container) {
+        setTimeout(() => {
+          container.scrollTop = container.scrollHeight;
+        }, 100);
+      }
+    }
+  }, [conversationHistory]);
 
   const handleCallAction = (callId, action) => {
     updateCallStatusMutation.mutate({ callId, status: action });
@@ -329,6 +373,27 @@ const LiveMonitor = () => {
                     </div>
                   </div>
 
+                  {/* Conversation preview for automated calls */}
+                  {call.automated && call.conversation && (
+                    <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-100">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-purple-700">
+                          Latest: {call.conversation.turnCount ? `${call.conversation.turnCount} turns` : 'Starting...'}
+                        </span>
+                        {call.conversation.lastEmotion && (
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${getEmotionColor(call.conversation.lastEmotion)}`}>
+                            {call.conversation.lastEmotion}
+                          </span>
+                        )}
+                      </div>
+                      {call.conversation.lastMessage && (
+                        <p className="text-xs text-gray-600 truncate">
+                          {call.conversation.lastMessage.substring(0, 80)}...
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mt-3 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       {!call.automated && (
@@ -356,8 +421,14 @@ const LiveMonitor = () => {
                         </>
                       )}
                       {call.automated && (
-                        <div className="text-xs text-gray-500 italic">
-                          Automated call in progress...
+                        <div className="flex items-center space-x-2">
+                          <span className="flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-purple-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+                          </span>
+                          <span className="text-xs text-purple-600 font-medium italic">
+                            AI in conversation...
+                          </span>
                         </div>
                       )}
                     </div>
@@ -536,28 +607,83 @@ const CallDetails = ({
 
       {/* Conversation */}
       <div>
-        <p className="text-sm text-gray-500 mb-2">Conversation</p>
-        <div className="max-h-64 overflow-y-auto space-y-2">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm text-gray-500">Conversation</p>
+          {call.automated && call.status === 'in_progress' && conversationHistory.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <span className="flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="text-xs text-green-600 font-medium">Live</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                {conversationHistory.length} turns
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="max-h-64 overflow-y-auto space-y-3" id="conversation-container">
           {conversationHistory.length === 0 ? (
             <div className="text-center py-4 text-gray-500">
-              No conversation history available
+              {call.automated && call.status === 'in_progress' ? (
+                <>
+                  <div className="animate-pulse mb-2">
+                    <div className="h-2 w-2 bg-blue-500 rounded-full mx-auto"></div>
+                  </div>
+                  <p>Waiting for conversation to start...</p>
+                </>
+              ) : (
+                <p>No conversation history available</p>
+              )}
             </div>
           ) : (
-            conversationHistory.map((m, i) => (
-              <div
-                key={i}
-                className={`p-2 rounded-lg text-sm ${
-                  m.type === 'user'
-                    ? 'bg-blue-100 text-blue-900 ml-4'
-                    : 'bg-gray-100 text-gray-900 mr-4'
-                }`}
-              >
-                <p>{m.message}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {new Date(m.timestamp).toLocaleTimeString()}
-                </p>
-              </div>
-            ))
+            conversationHistory.map((m, i) => {
+              const isLatest = i === conversationHistory.length - 1;
+              return (
+                <div
+                  key={i}
+                  className={`p-3 rounded-lg text-sm relative ${
+                    m.type === 'user'
+                      ? 'bg-blue-50 border border-blue-200 ml-4'
+                      : 'bg-purple-50 border border-purple-200 mr-4'
+                  } ${isLatest ? 'ring-2 ring-offset-1 ' + (m.type === 'user' ? 'ring-blue-300' : 'ring-purple-300') : ''}`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs font-semibold ${
+                      m.type === 'user' ? 'text-blue-700' : 'text-purple-700'
+                    }`}>
+                      {m.type === 'user' ? '👤 Customer' : '🤖 AI Agent'}
+                      {m.turn && <span className="ml-1 text-gray-400">#{m.turn}</span>}
+                    </span>
+                    {isLatest && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                        Latest
+                      </span>
+                    )}
+                  </div>
+                  <p className={m.type === 'user' ? 'text-blue-900' : 'text-purple-900'}>
+                    {m.message}
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <p className="text-xs text-gray-500">
+                      {new Date(m.timestamp).toLocaleTimeString()}
+                    </p>
+                    <div className="flex items-center space-x-1">
+                      {m.emotion && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${getEmotionColor(m.emotion)}`}>
+                          {m.emotion}
+                        </span>
+                      )}
+                      {m.confidence && (
+                        <span className="text-xs text-gray-500">
+                          {Math.round(m.confidence * 100)}% confident
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>

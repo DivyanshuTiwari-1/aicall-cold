@@ -42,6 +42,12 @@ export const phoneNumbersAPI = {
     const response = await api.get(`/phone-numbers/agent/${agentId}`);
     return response.data;
   },
+
+  // Get available phone numbers for automated calls (role-based)
+  getAvailableNumbers: async () => {
+    const response = await api.get('/phone-numbers/available');
+    return response.data;
+  },
 };
 
 export default phoneNumbersAPI;

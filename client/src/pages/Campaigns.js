@@ -14,10 +14,13 @@ import CreateCampaignModal from '../components/CreateCampaignModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { callsAPI } from '../services/calls';
 import campaignsAPI from '../services/campaigns';
+import phoneNumbersAPI from '../services/phoneNumbers';
 
 const Campaigns = () => {
     const queryClient = useQueryClient();
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showPhoneSelector, setShowPhoneSelector] = useState(false);
+    const [selectedCampaign, setSelectedCampaign] = useState(null);
 
     // Fetch campaigns
     const { data: campaignsData, isLoading: campaignsLoading } = useQuery({
@@ -33,14 +36,21 @@ const Campaigns = () => {
         refetchInterval: 60000,
     });
 
+    // Fetch available phone numbers
+    const { data: phoneNumbersData } = useQuery({
+        queryKey: ['available-phone-numbers'],
+        queryFn: () => phoneNumbersAPI.getAvailableNumbers(),
+    });
 
     // Start automated calls mutation
     const startAutomatedCallsMutation = useMutation({
-        mutationFn: (campaignId) => callsAPI.startAutomatedCalls(campaignId),
+        mutationFn: ({ campaignId, phoneNumberId }) => callsAPI.startAutomatedCalls(campaignId, phoneNumberId),
         onSuccess: () => {
             toast.success('Automated calls started successfully');
             queryClient.invalidateQueries({ queryKey: ['campaigns'] });
             queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+            setShowPhoneSelector(false);
+            setSelectedCampaign(null);
         },
         onError: (error) => {
             toast.error(error.response?.data?.message || 'Failed to start automated calls');
@@ -62,7 +72,19 @@ const Campaigns = () => {
 
 
     const handleStartAutomatedCalls = (campaignId) => {
-        startAutomatedCallsMutation.mutate(campaignId);
+        setSelectedCampaign(campaignId);
+        setShowPhoneSelector(true);
+    };
+
+    const confirmStartQueue = (phoneNumberId) => {
+        if (!phoneNumberId) {
+            toast.error('Please select a phone number');
+            return;
+        }
+        startAutomatedCallsMutation.mutate({
+            campaignId: selectedCampaign,
+            phoneNumberId
+        });
     };
 
     const handleStopAutomatedCalls = (campaignId) => {
@@ -283,6 +305,106 @@ const Campaigns = () => {
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
             />
+
+            {/* Phone Number Selector Modal */}
+            {showPhoneSelector && (
+                <PhoneNumberSelectorModal
+                    phoneNumbers={phoneNumbersData?.phoneNumbers || []}
+                    onSelect={confirmStartQueue}
+                    onClose={() => {
+                        setShowPhoneSelector(false);
+                        setSelectedCampaign(null);
+                    }}
+                    isLoading={startAutomatedCallsMutation.isLoading}
+                />
+            )}
+        </div>
+    );
+};
+
+// Phone Number Selector Modal Component
+const PhoneNumberSelectorModal = ({ phoneNumbers, onSelect, onClose, isLoading }) => {
+    const [selectedNumber, setSelectedNumber] = useState('');
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Select Phone Number
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                    Choose which phone number to use for automated calls
+                </p>
+
+                {phoneNumbers.length === 0 ? (
+                    <div className="text-center py-8">
+                        <PhoneIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                        <p className="text-gray-600">No phone numbers available</p>
+                        <p className="text-sm text-gray-500 mt-1">
+                            Please contact your administrator to assign phone numbers
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-2 mb-6 max-h-60 overflow-y-auto">
+                        {phoneNumbers.map((number) => (
+                            <label
+                                key={number.id}
+                                className={`flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                                    selectedNumber === number.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="phoneNumber"
+                                    value={number.id}
+                                    checked={selectedNumber === number.id}
+                                    onChange={(e) => setSelectedNumber(e.target.value)}
+                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                                />
+                                <div className="ml-3 flex-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-medium text-gray-900">
+                                            {number.phone_number}
+                                        </span>
+                                        {number.provider && (
+                                            <span className="text-xs text-gray-500 uppercase">
+                                                {number.provider}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {number.daily_limit && (
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Calls today: {number.calls_made_today || 0} / {number.daily_limit}
+                                        </div>
+                                    )}
+                                    {number.assigned_to && number.first_name && (
+                                        <div className="text-xs text-gray-500">
+                                            Assigned to: {number.first_name} {number.last_name}
+                                        </div>
+                                    )}
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                )}
+
+                <div className="flex space-x-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        disabled={isLoading}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={() => onSelect(selectedNumber)}
+                        disabled={!selectedNumber || isLoading || phoneNumbers.length === 0}
+                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? 'Starting...' : 'Start Queue'}
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };

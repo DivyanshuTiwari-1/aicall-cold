@@ -3,6 +3,7 @@ import {
     ChartBarIcon,
     ChartPieIcon,
     ClipboardDocumentListIcon,
+    CogIcon,
     CpuChipIcon,
     DocumentArrowUpIcon,
     MegaphoneIcon,
@@ -10,8 +11,7 @@ import {
     ShieldCheckIcon,
     SignalIcon,
     SpeakerWaveIcon,
-    UserGroupIcon,
-    UserIcon,
+    UserGroupIcon
 } from "@heroicons/react/24/outline";
 import React from "react";
 import { NavLink } from "react-router-dom";
@@ -23,20 +23,21 @@ const Navigation = () => {
 
     // Role-based navigation items
     const getNavigationItems = () => {
-        const baseItems = [
-            { name: "Dashboard", href: "/dashboard", icon: ChartBarIcon, roles: ['admin', 'manager', 'agent'] },
-            { name: "Campaigns", href: "/campaigns", icon: MegaphoneIcon, roles: ['admin', 'manager', 'agent'] },
-            { name: "Contacts", href: "/contacts", icon: UserGroupIcon, roles: ['admin', 'manager', 'agent', 'data_uploader'] },
-        ];
-
-        // Agent-specific items
-        if (['agent'].includes(roleType)) {
-            baseItems.push(
-                { name: "My Dashboard", href: "/agent-dashboard", icon: UserIcon, roles: ['agent'] },
+        // Agent-specific navigation (simplified)
+        if (roleType === 'agent') {
+            return [
+                { name: "Dashboard", href: "/agent", icon: ChartBarIcon, roles: ['agent'] },
                 { name: "My Leads", href: "/agent", icon: ClipboardDocumentListIcon, roles: ['agent'] },
-                { name: "Call History", href: "/my-calls", icon: PhoneIcon, roles: ['agent'] }
-            );
+                { name: "Call History", href: "/calls", icon: PhoneIcon, roles: ['agent'] },
+                { name: "Settings", href: "/settings", icon: CogIcon, roles: ['agent'] }
+            ];
         }
+
+        const baseItems = [
+            { name: "Dashboard", href: "/dashboard", icon: ChartBarIcon, roles: ['admin', 'manager'] },
+            { name: "Campaigns", href: "/campaigns", icon: MegaphoneIcon, roles: ['admin', 'manager'] },
+            { name: "Contacts", href: "/contacts", icon: UserGroupIcon, roles: ['admin', 'manager', 'data_uploader'] },
+        ];
 
         // Manager-specific items
         if (['manager', 'admin'].includes(roleType)) {
@@ -60,13 +61,15 @@ const Navigation = () => {
             baseItems.push({ name: "Upload Contacts", href: "/upload-contacts", icon: DocumentArrowUpIcon, roles: ['data_uploader', 'admin'] });
         }
 
-        // Common items for all roles
-        baseItems.push(
-            { name: "Voice Studio", href: "/voice-studio", icon: SpeakerWaveIcon, roles: ['admin', 'manager', 'agent'] },
-            { name: "AI Intelligence", href: "/ai-intelligence", icon: CpuChipIcon, roles: ['admin', 'manager', 'agent'] },
-            { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpenIcon, roles: ['admin', 'manager', 'agent'] },
-            { name: "Compliance", href: "/compliance", icon: ShieldCheckIcon, roles: ['admin', 'manager', 'agent'] }
-        );
+        // Common items for admin and manager
+        if (['admin', 'manager'].includes(roleType)) {
+            baseItems.push(
+                { name: "Voice Studio", href: "/voice-studio", icon: SpeakerWaveIcon, roles: ['admin', 'manager'] },
+                { name: "AI Intelligence", href: "/ai-intelligence", icon: CpuChipIcon, roles: ['admin', 'manager'] },
+                { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpenIcon, roles: ['admin', 'manager'] },
+                { name: "Compliance", href: "/compliance", icon: ShieldCheckIcon, roles: ['admin', 'manager'] }
+            );
+        }
 
         // Filter items based on user role
         return baseItems.filter(item => item.roles.includes(roleType));

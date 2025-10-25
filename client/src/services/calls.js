@@ -38,8 +38,8 @@ export const callsAPI = {
   },
 
   // Start automated calls for a campaign
-  startAutomatedCalls: async (campaignId) => {
-    const response = await api.post(`/calls/automated/start`, { campaignId });
+  startAutomatedCalls: async (campaignId, phoneNumberId) => {
+    const response = await api.post(`/calls/automated/start`, { campaignId, phoneNumberId });
     return response.data;
   },
 

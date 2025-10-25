@@ -161,30 +161,33 @@ router.post('/call-ended', async(req, res) => {
                 }
             });
 
-            // Update call with final data
+            // Update call with final data (only if Stasis app hasn't already updated it)
+            // Note: Stasis app (ChannelDestroyed) handles the primary update
+            // This is a fallback in case the channel event doesn't fire
             await query(`
                 UPDATE calls
                 SET
                     status = 'completed',
-                    outcome = $1,
-                    duration = $2,
-                    cost = $3,
-                    transcript = $4,
+                    outcome = COALESCE($1, outcome),
+                    duration = COALESCE($2, duration),
+                    cost = COALESCE($3, cost),
+                    transcript = COALESCE($4, transcript),
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = $5
+                WHERE id = $5 AND status != 'completed'
             `, [outcome, durationSeconds, totalCost, fullTranscript || null, call_id]);
 
-            // Update contact status
+            // Update contact status based on call outcome
             await query(`
                 UPDATE contacts
                 SET
                     status = CASE
-                        WHEN $2 >= 3 THEN 'contacted'
-                        ELSE 'retry'
+                        WHEN $2 IN ('completed', 'interested', 'scheduled') THEN 'contacted'
+                        WHEN $2 IN ('no_answer', 'busy') THEN 'retry'
+                        ELSE status
                     END,
                     last_contacted = CURRENT_TIMESTAMP
                 WHERE id = (SELECT contact_id FROM calls WHERE id = $1)
-            `, [call_id, turns || 0]);
+            `, [call_id, outcome]);
 
             logger.info(`✅ Call ${call_id} completed - Duration: ${durationSeconds}s, Cost: $${totalCost.toFixed(4)}, Outcome: ${outcome}`);
         }

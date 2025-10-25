@@ -68,17 +68,38 @@ class AiDialerStasisApp {
 
     async startAiConversation(channelId, callId, phoneNumber, campaignId) {
         try {
-            // Execute the AGI script for AI conversation
-            const agiResult = await this.ari.channels.continueInDialplan({
+            // Set channel variables for the AGI script
+            await this.ari.channels.setChannelVar({
                 channelId: channelId,
-                context: 'ai-dialer',
-                extension: phoneNumber,
-                priority: 1,
-                variables: {
-                    'CALL_ID': callId,
-                    'CONTACT_PHONE': phoneNumber,
-                    'CAMPAIGN_ID': campaignId
-                }
+                variable: 'CALL_ID',
+                value: callId
+            });
+
+            await this.ari.channels.setChannelVar({
+                channelId: channelId,
+                variable: 'CONTACT_PHONE',
+                value: phoneNumber
+            });
+
+            await this.ari.channels.setChannelVar({
+                channelId: channelId,
+                variable: 'CAMPAIGN_ID',
+                value: campaignId || 'unknown'
+            });
+
+            // Execute the AGI script directly with proper arguments
+            // The AGI script path should be relative to Asterisk's AGI directory
+            const agiScript = 'ai-dialer-agi-simple.php';
+            const agiArgs = `${callId},${phoneNumber},${campaignId || 'unknown'}`;
+
+            logger.info(`Executing AGI: ${agiScript} with args: ${agiArgs}`);
+
+            // Continue to dialplan context that will execute AGI
+            await this.ari.channels.continueInDialplan({
+                channelId: channelId,
+                context: 'ai-dialer-stasis',
+                extension: 's',
+                priority: 1
             });
 
             logger.info(`AGI script started for call ${callId}`);
@@ -116,6 +137,27 @@ class AiDialerStasisApp {
             // Update call status directly in database
             try {
                 const { query } = require('../../config/database');
+
+                // Get aggregated transcript from call_events BEFORE updating
+                const transcriptResult = await query(`
+                    SELECT event_data
+                    FROM call_events
+                    WHERE call_id = $1 AND event_type = 'ai_conversation'
+                    ORDER BY timestamp ASC
+                `, [callInfo.callId]);
+
+                let fullTranscript = '';
+                transcriptResult.rows.forEach(row => {
+                    const data = row.event_data;
+                    if (data.user_input) {
+                        fullTranscript += `Customer: ${data.user_input}\n`;
+                    }
+                    if (data.ai_response) {
+                        fullTranscript += `AI: ${data.ai_response}\n`;
+                    }
+                });
+
+                // Update call with final data (only if not already completed)
                 await query(`
                     UPDATE calls
                     SET
@@ -123,9 +165,10 @@ class AiDialerStasisApp {
                         outcome = $1,
                         duration = $2,
                         cost = $3,
+                        transcript = $4,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE id = $4 AND status != 'completed'
-                `, [outcome, durationSeconds, callCost, callInfo.callId]);
+                    WHERE id = $5 AND status != 'completed'
+                `, [outcome, durationSeconds, callCost, fullTranscript || null, callInfo.callId]);
 
                 logger.info(`✅ Call ${callInfo.callId} marked as completed with outcome: ${outcome}`);
             } catch (dbError) {

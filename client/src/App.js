@@ -52,12 +52,27 @@ const ProtectedRoute = ({ children }) => {
   return user ? children : <Navigate to='/login' />;
 };
 
+// Default Dashboard Route Component
+const DefaultDashboard = () => {
+  const { user } = useAuth();
+  return <Navigate to={user?.roleType === 'agent' ? '/agent' : '/dashboard'} replace />;
+};
+
 // Public Route Component (redirect if already logged in)
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
   if (loading) return <LoadingSpinner />;
-  return user ? <Navigate to='/dashboard' /> : children;
+
+  // Redirect to appropriate dashboard based on role
+  if (user) {
+    if (user.roleType === 'agent') {
+      return <Navigate to='/agent' />;
+    }
+    return <Navigate to='/dashboard' />;
+  }
+
+  return children;
 };
 
 function App() {
@@ -119,11 +134,16 @@ function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Navigate to='/dashboard' replace />} />
+                {/* Default Route */}
+                <Route index element={<DefaultDashboard />} />
+
+                {/* Agent Routes */}
+                <Route path='agent' element={<AgentDashboard />} />
+
+                {/* Admin/Manager Routes */}
                 <Route path='dashboard' element={<Dashboard />} />
                 <Route path='executive' element={<ExecutiveDashboard />} />
                 <Route path='manager' element={<ManagerDashboard />} />
-                <Route path='agent' element={<AgentDashboard />} />
                 <Route path='data-uploader' element={<DataUploaderDashboard />} />
                 <Route path='lead-assignment' element={<LeadAssignment />} />
                 <Route path='campaigns' element={<Campaigns />} />
@@ -144,7 +164,7 @@ function App() {
               </Route>
 
               {/* Catch all route */}
-              <Route path='*' element={<Navigate to='/dashboard' replace />} />
+              <Route path='*' element={<DefaultDashboard />} />
             </Routes>
           </div>
         </Router>

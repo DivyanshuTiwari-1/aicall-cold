@@ -50,7 +50,7 @@ services:
       - TELNYX_PASSWORD=DxZU$m4#GuFhRTp
       - TELNYX_SIP_URI=sip:info@pitchnhire.com@sip.telnyx.com
       - TELNYX_IP_RANGE=66.109.0.0/16
-      - TELNYX_DID=+12025550123
+      - TELNYX_DID=+18058690081
       - TELNYX_TIMEOUT=30
 
       # Voice Stack

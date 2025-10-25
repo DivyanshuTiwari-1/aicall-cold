@@ -88,6 +88,56 @@ router.get('/', authenticateToken, requireRole('admin', 'manager'), async (req, 
     }
 });
 
+// Get available phone numbers for automated calls (role-based)
+router.get('/available', authenticateToken, async (req, res) => {
+    try {
+        let queryStr;
+        let params;
+
+        if (req.user.role === 'admin' || req.user.role === 'manager') {
+            // Admins and managers see all active numbers
+            queryStr = `
+                SELECT pn.id, pn.phone_number, pn.provider, pn.country_code,
+                       pn.assigned_to, u.first_name, u.last_name,
+                       apn.daily_limit, apn.calls_made_today
+                FROM phone_numbers pn
+                LEFT JOIN users u ON pn.assigned_to = u.id
+                LEFT JOIN agent_phone_numbers apn ON pn.id = apn.phone_number_id
+                WHERE pn.organization_id = $1 AND pn.status = 'active'
+                ORDER BY pn.phone_number
+            `;
+            params = [req.organizationId];
+        } else {
+            // Agents see only their assigned numbers
+            queryStr = `
+                SELECT pn.id, pn.phone_number, pn.provider, pn.country_code,
+                       apn.daily_limit, apn.calls_made_today
+                FROM phone_numbers pn
+                JOIN agent_phone_numbers apn ON pn.id = apn.phone_number_id
+                WHERE pn.organization_id = $1
+                  AND pn.assigned_to = $2
+                  AND pn.status = 'active'
+                ORDER BY pn.phone_number
+            `;
+            params = [req.organizationId, req.user.id];
+        }
+
+        const result = await query(queryStr, params);
+
+        res.json({
+            success: true,
+            phoneNumbers: result.rows
+        });
+
+    } catch (error) {
+        logger.error('Get available numbers error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch available phone numbers'
+        });
+    }
+});
+
 // Add a new phone number
 router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
     try {

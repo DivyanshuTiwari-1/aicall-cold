@@ -322,6 +322,61 @@ router.get('/history/:call_id', async(req, res) => {
     }
 });
 
+// Get conversation context for live monitoring
+router.get('/context/:call_id', async(req, res) => {
+    try {
+        const { call_id } = req.params;
+
+        // Verify call exists (use organizationId from middleware if available)
+        const callCheck = await query(
+            'SELECT id, organization_id FROM calls WHERE id = $1',
+            [call_id]
+        );
+
+        if (callCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Call not found'
+            });
+        }
+
+        // Get all conversation events for this call
+        const result = await query(`
+            SELECT event_data, timestamp
+            FROM call_events
+            WHERE call_id = $1 AND event_type = 'ai_conversation'
+            ORDER BY timestamp ASC
+        `, [call_id]);
+
+        // Format conversation history for frontend
+        const history = result.rows.map((row, index) => {
+            const data = row.event_data || {};
+            return {
+                user_input: data.user_input || null,
+                ai_response: data.ai_response || null,
+                timestamp: row.timestamp,
+                turn: data.turn || (index + 1),
+                confidence: data.confidence || null,
+                emotion: data.emotion || null,
+                intent: data.intent || null,
+                type: data.type || 'conversation'
+            };
+        });
+
+        res.json({
+            success: true,
+            history
+        });
+
+    } catch (error) {
+        logger.error('Conversation context error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch conversation context'
+        });
+    }
+});
+
 // Enhanced AI Conversation Engine
 class ConversationEngine {
     constructor() {

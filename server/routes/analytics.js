@@ -378,7 +378,7 @@ router.get('/live-calls', authenticateToken, requireRole('manager', 'admin'), as
         c.emotion,
         c.created_at as started_at,
         c.call_type,
-        c.automated,
+        CASE WHEN c.call_type = 'automated' THEN true ELSE false END as automated,
         EXTRACT(EPOCH FROM (NOW() - c.created_at))::integer as duration_seconds,
         u.first_name as agent_first_name,
         u.last_name as agent_last_name,
@@ -401,6 +401,50 @@ router.get('/live-calls', authenticateToken, requireRole('manager', 'admin'), as
     `;
 
         const result = await query(liveCallsQuery, [organizationId]);
+
+        // Get latest conversation data for each active call
+        const callIds = result.rows.map(call => call.id);
+        let conversationData = {};
+
+        if (callIds.length > 0) {
+            const conversationQuery = `
+                SELECT DISTINCT ON (call_id)
+                    call_id,
+                    event_data,
+                    timestamp
+                FROM call_events
+                WHERE call_id = ANY($1)
+                    AND event_type = 'ai_conversation'
+                ORDER BY call_id, timestamp DESC
+            `;
+
+            const convResult = await query(conversationQuery, [callIds]);
+            convResult.rows.forEach(row => {
+                conversationData[row.call_id] = {
+                    lastMessage: row.event_data?.ai_response || row.event_data?.user_input || null,
+                    lastTimestamp: row.timestamp,
+                    lastEmotion: row.event_data?.emotion || null
+                };
+            });
+
+            // Get conversation turn counts
+            const turnCountQuery = `
+                SELECT call_id, COUNT(*) as turn_count
+                FROM call_events
+                WHERE call_id = ANY($1)
+                    AND event_type = 'ai_conversation'
+                GROUP BY call_id
+            `;
+
+            const turnResult = await query(turnCountQuery, [callIds]);
+            turnResult.rows.forEach(row => {
+                if (conversationData[row.call_id]) {
+                    conversationData[row.call_id].turnCount = parseInt(row.turn_count);
+                } else {
+                    conversationData[row.call_id] = { turnCount: parseInt(row.turn_count) };
+                }
+            });
+        }
 
         res.json({
             success: true,
@@ -435,7 +479,8 @@ router.get('/live-calls', authenticateToken, requireRole('manager', 'admin'), as
                     id: call.campaign_id,
                     name: call.campaign_name,
                     type: call.campaign_type
-                } : null
+                } : null,
+                conversation: conversationData[call.id] || null
             }))
         });
 

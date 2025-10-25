@@ -4,9 +4,11 @@ import {
     ClockIcon,
     PhoneIcon,
     PhoneXMarkIcon,
+    PlusIcon,
     StopIcon,
     UserGroupIcon,
-    XCircleIcon
+    XCircleIcon,
+    XMarkIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
@@ -18,6 +20,7 @@ import WarmTransferManager from '../components/WarmTransferManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { assignmentsAPI } from '../services/assignments';
+import contactsAPI from '../services/contacts';
 import { manualCallsAPI } from '../services/manualCalls';
 
 const AgentDashboard = () => {
@@ -31,6 +34,15 @@ const AgentDashboard = () => {
   const [callStatus, setCallStatus] = useState('idle');
   const [currentCall, setCurrentCall] = useState(null);
   const [callingContact, setCallingContact] = useState(null);
+  const [showAddLeadModal, setShowAddLeadModal] = useState(false);
+  const [newLead, setNewLead] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    email: '',
+    company: '',
+    title: ''
+  });
 
   // Fetch assigned leads
   const { data: leadsData, isLoading: leadsLoading } = useQuery({
@@ -88,6 +100,37 @@ const AgentDashboard = () => {
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to log call');
+    },
+  });
+
+  // Add manual lead mutation
+  const addLeadMutation = useMutation({
+    mutationFn: (data) => contactsAPI.createContact(data),
+    onSuccess: (response) => {
+      toast.success('Lead added successfully');
+      setShowAddLeadModal(false);
+      setNewLead({
+        firstName: '',
+        lastName: '',
+        phone: '',
+        email: '',
+        company: '',
+        title: ''
+      });
+      // Immediately call the new lead
+      if (response.contact) {
+        setCallingContact({
+          id: response.contact.id,
+          firstName: response.contact.firstName,
+          lastName: response.contact.lastName,
+          phone: response.contact.phone,
+          company: response.contact.company,
+          title: response.contact.title
+        });
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to add lead');
     },
   });
 
@@ -199,6 +242,25 @@ const AgentDashboard = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const handleAddLead = (e) => {
+    e.preventDefault();
+
+    // Basic validation
+    if (!newLead.firstName || !newLead.lastName || !newLead.phone) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    // Validate phone number format (basic check)
+    const phoneRegex = /^[0-9+\-() ]+$/;
+    if (!phoneRegex.test(newLead.phone)) {
+      toast.error('Please enter a valid phone number');
+      return;
+    }
+
+    addLeadMutation.mutate(newLead);
+  };
+
   const leads = leadsData?.leads || [];
   const stats = statsData?.stats || {};
   const calls = callsData?.calls || [];
@@ -212,13 +274,17 @@ const AgentDashboard = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agent Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600">Manage your leads and make calls</p>
         </div>
         <div className="flex items-center space-x-4">
-          <div className="text-sm text-gray-500">
-            SIP Extension: {user?.sipExtension || 'Not configured'}
-          </div>
+          <button
+            onClick={() => setShowAddLeadModal(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Add Lead & Call
+          </button>
           <div className={`px-3 py-1 rounded-full text-sm ${
             user?.isAvailable
               ? 'bg-green-100 text-green-800'
@@ -533,6 +599,118 @@ const AgentDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Add Lead Modal */}
+      {showAddLeadModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Add New Lead</h3>
+              <button
+                onClick={() => setShowAddLeadModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddLead} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newLead.firstName}
+                  onChange={(e) => setNewLead({ ...newLead, firstName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newLead.lastName}
+                  onChange={(e) => setNewLead({ ...newLead, lastName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={newLead.phone}
+                  onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="+1234567890"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={newLead.email}
+                  onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Company
+                </label>
+                <input
+                  type="text"
+                  value={newLead.company}
+                  onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={newLead.title}
+                  onChange={(e) => setNewLead({ ...newLead, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={addLeadMutation.isLoading}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400"
+                >
+                  {addLeadMutation.isLoading ? 'Adding...' : 'Add & Call'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddLeadModal(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Warm Transfer Manager */}
       <div className="mt-6">

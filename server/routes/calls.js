@@ -706,7 +706,8 @@ router.get('/:id/conversation', authenticateToken, requireRole('admin', 'manager
 
 // Validation schema for automated calls
 const automatedCallSchema = Joi.object({
-    campaignId: Joi.string().uuid().required()
+    campaignId: Joi.string().uuid().required(),
+    phoneNumberId: Joi.string().uuid().required()
 });
 
 // Start automated calls for a campaign
@@ -721,7 +722,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
             });
         }
 
-        const { campaignId } = value;
+        const { campaignId, phoneNumberId } = value;
 
         // Verify campaign exists and belongs to organization
         const campaignCheck = await query(
@@ -743,6 +744,46 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
                 success: false,
                 message: 'Cannot start automated calls for completed campaigns'
             });
+        }
+
+        // Get and validate phone number selection
+        const phoneNumberResult = await query(`
+            SELECT pn.id, pn.phone_number, pn.provider, pn.assigned_to,
+                   apn.daily_limit, apn.calls_made_today, apn.agent_id
+            FROM phone_numbers pn
+            LEFT JOIN agent_phone_numbers apn ON pn.id = apn.phone_number_id
+            WHERE pn.id = $1 AND pn.organization_id = $2 AND pn.status = 'active'
+        `, [phoneNumberId, req.organizationId]);
+
+        if (phoneNumberResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Phone number not found or inactive'
+            });
+        }
+
+        const selectedNumber = phoneNumberResult.rows[0];
+
+        // Role-based access check
+        if (req.user.role === 'agent') {
+            // Agents can only use numbers assigned to them
+            if (selectedNumber.assigned_to !== req.user.id) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You can only use phone numbers assigned to you'
+                });
+            }
+
+            // Check daily limit for agents
+            if (selectedNumber.calls_made_today >= selectedNumber.daily_limit) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Daily call limit reached (${selectedNumber.daily_limit} calls)`,
+                    limitReached: true,
+                    dailyLimit: selectedNumber.daily_limit,
+                    callsMadeToday: selectedNumber.calls_made_today
+                });
+            }
         }
 
         // Check if campaign has contacts ready for calling
@@ -777,14 +818,15 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         // Start the automated call queue
         try {
             const { callQueue } = require('../services/queue');
-            await callQueue.startQueue(null, campaignId);
+            await callQueue.startQueue(null, campaignId, phoneNumberId, selectedNumber.phone_number);
 
-            logger.info(`Automated calls started for campaign: ${campaignId}`);
+            logger.info(`Automated calls started for campaign: ${campaignId} using phone number: ${selectedNumber.phone_number}`);
 
             res.json({
                 success: true,
                 message: 'Automated calls started successfully',
-                campaignId: campaignId
+                campaignId: campaignId,
+                phoneNumber: selectedNumber.phone_number
             });
         } catch (queueError) {
             logger.error('Queue start error:', queueError);

@@ -490,9 +490,11 @@ router.get('/conversation', async(req, res) => {
 
         // Get call details
         const callResult = await query(`
-            SELECT c.*, camp.name as campaign_name, camp.script_id
+            SELECT c.*, camp.name as campaign_name, camp.script_id,
+                   ct.first_name, ct.last_name, ct.company, ct.title, ct.phone
             FROM calls c
             LEFT JOIN campaigns camp ON c.campaign_id = camp.id
+            LEFT JOIN contacts ct ON c.contact_id = ct.id
             WHERE c.id = $1 AND c.organization_id = $2
         `, [call_id, req.organizationId]);
 
@@ -532,11 +534,39 @@ router.get('/conversation', async(req, res) => {
             }
         }
 
+        // Format response for AGI scripts (backward compatible)
+        let mainScript = script ? script.content : 'Hello, this is an AI assistant calling on behalf of our company.';
+
+        // Personalize the script with contact information
+        if (call.first_name) {
+            mainScript = mainScript.replace(/\{first_name\}/g, call.first_name);
+            mainScript = mainScript.replace(/\{name\}/g, call.first_name);
+        }
+        if (call.last_name) {
+            mainScript = mainScript.replace(/\{last_name\}/g, call.last_name);
+        }
+        if (call.company) {
+            mainScript = mainScript.replace(/\{company\}/g, call.company);
+        }
+        if (call.title) {
+            mainScript = mainScript.replace(/\{title\}/g, call.title);
+        }
+
+        // Return both old and new format for compatibility
         res.json({
             success: true,
+            main_script: mainScript,  // For AGI scripts
+            script_content: mainScript,  // Alternative field name
             data: {
                 call: call,
                 script: script
+            },
+            contact: {
+                first_name: call.first_name,
+                last_name: call.last_name,
+                company: call.company,
+                title: call.title,
+                phone: call.phone
             }
         });
 

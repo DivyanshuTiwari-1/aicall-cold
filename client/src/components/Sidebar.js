@@ -33,27 +33,36 @@ const Sidebar = ({ isOpen, onClose }) => {
     onClose(); // Close sidebar after logout
   };
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, roles: ['admin', 'manager', 'agent', 'data_uploader'] },
-    { name: 'Agent Dashboard', href: '/agent', icon: UserGroupIcon, roles: ['agent'] },
+  // Agent-specific simplified navigation
+  const agentNavigation = [
+    { name: 'Dashboard', href: '/agent', icon: HomeIcon, roles: ['agent'] },
+    { name: 'My Leads', href: '/agent', icon: ClipboardDocumentListIcon, roles: ['agent'] },
+    { name: 'Call History', href: '/calls', icon: PhoneIcon, roles: ['agent'] },
+    { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['agent'] },
+  ];
+
+  // Full navigation for other roles
+  const fullNavigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, roles: ['admin', 'manager', 'data_uploader'] },
     { name: 'Lead Assignment', href: '/lead-assignment', icon: ClipboardDocumentListIcon, roles: ['admin', 'manager'] },
-    { name: 'Campaigns', href: '/campaigns', icon: MegaphoneIcon, roles: ['admin', 'manager', 'agent'] },
-    { name: 'Contacts', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'agent', 'data_uploader'] },
-    { name: 'Calls', href: '/calls', icon: PhoneIcon, roles: ['admin', 'manager', 'agent'] },
-    { name: 'Live Monitor', href: '/live-monitor', icon: EyeIcon, roles: ['admin', 'manager', 'agent'] },
+    { name: 'Campaigns', href: '/campaigns', icon: MegaphoneIcon, roles: ['admin', 'manager'] },
+    { name: 'Contacts', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
+    { name: 'Calls', href: '/calls', icon: PhoneIcon, roles: ['admin', 'manager'] },
+    { name: 'Live Monitor', href: '/live-monitor', icon: EyeIcon, roles: ['admin', 'manager'] },
     { name: 'Voice Studio', href: '/voice-studio', icon: MicrophoneIcon, roles: ['admin', 'manager'] },
-    { name: 'AI Intelligence', href: '/ai-intelligence', icon: CpuChipIcon, roles: ['admin', 'manager', 'agent'] },
-    { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpenIcon, roles: ['admin', 'manager', 'agent'] },
+    { name: 'AI Intelligence', href: '/ai-intelligence', icon: CpuChipIcon, roles: ['admin', 'manager'] },
+    { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpenIcon, roles: ['admin', 'manager'] },
     { name: 'Compliance', href: '/compliance', icon: ShieldCheckIcon, roles: ['admin', 'manager'] },
-    { name: 'Analytics', href: '/analytics', icon: ChartBarIcon, roles: ['admin', 'manager', 'agent'] },
+    { name: 'Analytics', href: '/analytics', icon: ChartBarIcon, roles: ['admin', 'manager'] },
     { name: 'Billing', href: '/billing', icon: CreditCardIcon, roles: ['admin', 'manager'] },
     { name: 'User Management', href: '/users', icon: UsersIcon, roles: ['admin'] },
     { name: 'Phone Numbers', href: '/phone-numbers', icon: PhoneIcon, roles: ['admin'] },
     { name: 'Agent Assignments', href: '/agent-assignments', icon: UserGroupIcon, roles: ['admin'] },
-    { name: 'Scripts', href: '/scripts', icon: DocumentTextIcon, roles: ['admin', 'manager', 'agent'] },
-    { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['admin', 'manager', 'agent'] },
+    { name: 'Scripts', href: '/scripts', icon: DocumentTextIcon, roles: ['admin', 'manager'] },
+    { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['admin', 'manager'] },
   ];
 
+  const navigation = user?.roleType === 'agent' ? agentNavigation : fullNavigation;
   const filteredNavigation = navigation.filter(item => canViewPage(item.href.split('/')[1]));
 
   return (

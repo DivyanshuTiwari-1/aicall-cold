@@ -18,7 +18,7 @@ class AutomatedCallQueue {
         this.retryDelay = parseInt(process.env.RETRY_DELAY_MS) || 300000; // 5 minutes
     }
 
-    async startQueue(agentId, campaignId = null) {
+    async startQueue(agentId, campaignId = null, phoneNumberId = null, phoneNumber = null) {
         try {
             // Handle both agent-specific and campaign-wide queues
             const queueKey = campaignId || agentId;
@@ -62,6 +62,8 @@ class AutomatedCallQueue {
             this.activeQueues.set(queueKey, {
                 agentId: agentId || null,
                 campaignId: campaignId,
+                phoneNumberId: phoneNumberId,
+                phoneNumber: phoneNumber,
                 status: 'running',
                 startTime: new Date(),
                 totalContacts: assignedLeads.length,
@@ -120,8 +122,26 @@ class AutomatedCallQueue {
                 return;
             }
 
+            // Check daily limit before making next call
+            if (queue.phoneNumberId) {
+                const limitCheck = await query(`
+                    SELECT calls_made_today, daily_limit
+                    FROM agent_phone_numbers
+                    WHERE phone_number_id = $1
+                `, [queue.phoneNumberId]);
+
+                if (limitCheck.rows.length > 0) {
+                    const { calls_made_today, daily_limit } = limitCheck.rows[0];
+                    if (calls_made_today >= daily_limit) {
+                        logger.warn(`Daily limit reached for phone number, stopping queue ${queueKey}`);
+                        await this.stopQueue(queueKey);
+                        return;
+                    }
+                }
+            }
+
             // Make the call
-            await this.initiateCall(queue.campaignId, contact);
+            await this.initiateCall(queue.campaignId, contact, queue);
 
             // Update queue state
             queue.processedContacts++;
@@ -170,7 +190,7 @@ class AutomatedCallQueue {
         }
     }
 
-    async initiateCall(campaignId, contact) {
+    async initiateCall(campaignId, contact, queue) {
         try {
             const { startOutboundCall } = require('./telephony');
 
@@ -199,9 +219,9 @@ class AutomatedCallQueue {
             const callResult = await query(`
                 INSERT INTO calls (
                     id, organization_id, campaign_id, contact_id,
-                    status, cost, call_type, created_at
+                    status, cost, call_type, from_number, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                 RETURNING *
             `, [
                 callId,
@@ -210,7 +230,8 @@ class AutomatedCallQueue {
                 contact.id,
                 'initiated',
                 0.0045,
-                'automated'
+                'automated',
+                queue.phoneNumber || null
             ]);
 
             const call = callResult.rows[0];
@@ -235,16 +256,30 @@ class AutomatedCallQueue {
                 campaignId: campaignId,
                 contactId: contact.id,
                 toPhone: contact.phone,
+                fromNumber: queue.phoneNumber,
                 automated: true
             });
 
-            // Update contact status
+            // Don't update contact status here - it will be updated when call completes
+            // This prevents marking contacts as 'contacted' if the call fails immediately
+            // The contact status will be updated in /call-ended based on actual outcome
+
+            // Only update last_contacted timestamp to track the attempt
             await query(`
                 UPDATE contacts
-                SET status = 'contacted',
-                    last_contacted = CURRENT_TIMESTAMP
+                SET last_contacted = CURRENT_TIMESTAMP
                 WHERE id = $1
             `, [contact.id]);
+
+            // Increment daily call counter for the phone number
+            if (queue.phoneNumberId) {
+                await query(`
+                    UPDATE agent_phone_numbers
+                    SET calls_made_today = calls_made_today + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE phone_number_id = $1
+                `, [queue.phoneNumberId]);
+            }
 
             logger.info(`✅ Automated call initiated for ${contact.first_name} ${contact.last_name} (${contact.phone}), Call ID: ${call.id}`);
 
@@ -353,6 +388,41 @@ cron.schedule('*/30 * * * * *', async() => {
         }
     } catch (error) {
         logger.error('Queue monitoring error:', error);
+    }
+});
+
+// Cleanup stuck calls every 5 minutes
+cron.schedule('*/5 * * * *', async() => {
+    try {
+        logger.info('Running stuck call cleanup job...');
+
+        // Mark calls stuck in 'initiated' or 'in_progress' for > 15 minutes as failed
+        const result = await query(`
+            UPDATE calls
+            SET
+                status = 'failed',
+                outcome = 'timeout',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status IN ('initiated', 'in_progress')
+            AND created_at < NOW() - INTERVAL '15 minutes'
+            RETURNING id, contact_id, created_at
+        `);
+
+        if (result.rows.length > 0) {
+            logger.warn(`⚠️ Cleaned up ${result.rows.length} stuck calls`);
+
+            // Update contacts for stuck calls to retry status
+            for (const call of result.rows) {
+                await query(`
+                    UPDATE contacts
+                    SET status = 'retry',
+                        retry_count = retry_count + 1
+                    WHERE id = $1
+                `, [call.contact_id]);
+            }
+        }
+    } catch (error) {
+        logger.error('Stuck call cleanup error:', error);
     }
 });
 
