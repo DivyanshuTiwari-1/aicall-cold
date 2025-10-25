@@ -162,4 +162,3 @@ Just remember these 3 steps:
 3. **Clear browser cache**
 
 Your changes will be live!
-
