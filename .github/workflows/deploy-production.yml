@@ -65,68 +65,68 @@ jobs:
 
             echo "📂 Navigating to: $APP_DIR"
             cd "$APP_DIR"
-            
+
             # Pull latest code and detect changes
             echo "📥 Pulling latest code..."
             BEFORE_COMMIT=$(git rev-parse HEAD)
             git fetch origin
             git reset --hard origin/main
             AFTER_COMMIT=$(git rev-parse HEAD)
-            
+
             echo "✓ Code updated: $(git log --oneline -1)"
             echo ""
-            
+
             # Detect what changed
             CHANGED_FILES=$(git diff --name-only $BEFORE_COMMIT $AFTER_COMMIT || echo "all")
             echo "📝 Changed files:"
             echo "$CHANGED_FILES"
             echo ""
-            
+
             # Determine what needs rebuilding
             REBUILD_FRONTEND=false
             REBUILD_BACKEND=false
             REBUILD_ASTERISK=false
-            
+
             if echo "$CHANGED_FILES" | grep -q "^client/"; then
                 REBUILD_FRONTEND=true
                 echo "🔄 Frontend changes detected"
             fi
-            
+
             if echo "$CHANGED_FILES" | grep -q "^server/"; then
                 REBUILD_BACKEND=true
                 echo "🔄 Backend changes detected"
             fi
-            
+
             if echo "$CHANGED_FILES" | grep -q "asterisk-config/\|Dockerfile.asterisk"; then
                 REBUILD_ASTERISK=true
                 echo "🔄 Asterisk changes detected"
             fi
-            
+
             echo ""
-            
+
             # Smart rebuild - only rebuild what changed
             if [ "$REBUILD_FRONTEND" = true ] || [ "$REBUILD_BACKEND" = true ] || [ "$REBUILD_ASTERISK" = true ]; then
                 echo "🔨 Rebuilding changed services..."
-                
+
                 if [ "$REBUILD_FRONTEND" = true ]; then
                     echo "   📦 Building frontend..."
-                    docker-compose -f docker-compose.demo.yml build --no-cache frontend
+                    docker-compose -f docker-compose.demo.yml build frontend
                 fi
                 
                 if [ "$REBUILD_BACKEND" = true ]; then
                     echo "   📦 Building backend..."
-                    docker-compose -f docker-compose.demo.yml build --no-cache backend
+                    docker-compose -f docker-compose.demo.yml build backend
                 fi
                 
                 if [ "$REBUILD_ASTERISK" = true ]; then
                     echo "   📦 Building asterisk..."
-                    docker-compose -f docker-compose.demo.yml build --no-cache asterisk
+                    docker-compose -f docker-compose.demo.yml build asterisk
                 fi
-                
+
                 echo ""
                 echo "🚀 Restarting services..."
                 docker-compose -f docker-compose.demo.yml up -d
-                
+
                 # Run migrations if backend changed
                 if [ "$REBUILD_BACKEND" = true ]; then
                     echo ""
@@ -135,20 +135,20 @@ jobs:
                     echo "🔄 Running migrations..."
                     docker exec ai-dialer-backend npm run migrate || echo "⚠️ Migrations already applied"
                 fi
-                
+
                 echo ""
                 echo "🧹 Cleaning up old images..."
                 docker image prune -f
-                
+
             else
                 echo "ℹ️  No service changes, just restarting..."
                 docker-compose -f docker-compose.demo.yml restart
             fi
-            
+
             echo ""
             echo "💾 Disk usage after cleanup:"
             docker system df
-            
+
             echo ""
             echo "✅ Deployment completed successfully!"
             echo "🎉 Production is now running the latest code"
