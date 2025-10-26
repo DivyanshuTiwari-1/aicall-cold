@@ -20,7 +20,6 @@ import Billing from './pages/Billing';
 import Calls from './pages/Calls';
 import Campaigns from './pages/Campaigns';
 import Compliance from './pages/Compliance';
-import Contacts from './pages/Contacts';
 import ContactsAndLeads from './pages/ContactsAndLeads';
 import Dashboard from './pages/Dashboard';
 import DataUploaderDashboard from './pages/DataUploaderDashboard';

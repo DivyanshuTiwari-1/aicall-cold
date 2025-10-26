@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
 import { UserGroupIcon, UsersIcon } from '@heroicons/react/24/outline';
+import React, { useState } from 'react';
 import Contacts from './Contacts';
 import LeadAssignment from './LeadAssignment';
 
@@ -57,4 +57,3 @@ const ContactsAndLeads = () => {
 };
 
 export default ContactsAndLeads;
-
