@@ -26,12 +26,21 @@ const LiveMonitor = () => {
   const [selectedCall, setSelectedCall] = useState(null);
   const [conversationHistory, setConversationHistory] = useState([]);
   const [isMonitoring, setIsMonitoring] = useState(true);
+  const [activeTab, setActiveTab] = useState('active'); // 'active' or 'history'
 
-  // Fetch live calls initially
+  // Fetch live calls initially (Active Calls)
   const { data: liveCallsData, isLoading, error, refetch } = useQuery({
     queryKey: ['live-calls'],
     queryFn: () => analyticsAPI.getLiveCalls(),
     refetchInterval: false, // Disabled polling - using WebSocket now
+    enabled: true,
+  });
+
+  // Fetch call history (Recent completed/failed calls)
+  const { data: callHistoryData, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+    queryKey: ['call-history'],
+    queryFn: () => callsAPI.getCalls({ limit: 50, offset: 0 }),
+    refetchInterval: 30000, // Refresh every 30 seconds
     enabled: true,
   });
 
@@ -81,8 +90,9 @@ const LiveMonitor = () => {
 
     const handleCallEnd = (data) => {
       console.log('📴 Call ended:', data);
-      // Refresh live calls when call ends
+      // Refresh both live calls and call history
       refetch();
+      refetchHistory();
 
       // If the selected call ended, update conversation one last time
       if (selectedCall?.id === data.callId) {
@@ -148,6 +158,12 @@ const LiveMonitor = () => {
       // Cleanup listeners when component unmounts
     };
   }, [isConnected, user?.organizationId, addListener, queryClient, selectedCall, refetch]);
+
+  // Clear selected call when switching tabs
+  useEffect(() => {
+    setSelectedCall(null);
+    setConversationHistory([]);
+  }, [activeTab]);
 
   // Load conversation history when call is selected
   useEffect(() => {
@@ -272,18 +288,28 @@ const LiveMonitor = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Live Monitor</h1>
-          <p className="text-gray-600">Monitor active calls in real-time</p>
+          <h1 className="text-2xl font-bold text-gray-900">Live Monitor & Call History</h1>
+          <p className="text-gray-600">Track active calls and view completed conversations in real-time</p>
         </div>
 
         <div className="flex items-center space-x-4">
           <div className={`flex items-center px-3 py-1 rounded-full text-sm ${
-            isMonitoring
+            isConnected
               ? 'bg-green-100 text-green-800'
               : 'bg-red-100 text-red-800'
           }`}>
             <div className={`w-2 h-2 rounded-full mr-2 ${
-              isMonitoring ? 'bg-green-500' : 'bg-red-500'
+              isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+            }`} />
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </div>
+          <div className={`flex items-center px-3 py-1 rounded-full text-sm ${
+            isMonitoring
+              ? 'bg-blue-100 text-blue-800'
+              : 'bg-gray-100 text-gray-800'
+          }`}>
+            <div className={`w-2 h-2 rounded-full mr-2 ${
+              isMonitoring ? 'bg-blue-500' : 'bg-gray-500'
             }`} />
             {isMonitoring ? 'Monitoring' : 'Paused'}
           </div>
@@ -308,6 +334,52 @@ const LiveMonitor = () => {
             )}
           </button>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'active'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center">
+              <PhoneIcon className="h-5 w-5 mr-2" />
+              Active Calls
+              {liveCallsData?.activeCalls?.length > 0 && (
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  activeTab === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {liveCallsData.activeCalls.length}
+                </span>
+              )}
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'history'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center">
+              <ClockIcon className="h-5 w-5 mr-2" />
+              Call History
+              {callHistoryData?.calls?.length > 0 && (
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  activeTab === 'history' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {callHistoryData.calls.length}
+                </span>
+              )}
+            </div>
+          </button>
+        </nav>
       </div>
 
       {/* Metrics Section */}
@@ -363,13 +435,15 @@ const LiveMonitor = () => {
       </div>
 
       {/* Main Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Active Calls */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <PhoneIcon className="h-5 w-5 text-green-500 mr-2" />
-            Active Calls
-          </h3>
+      {/* Content Based on Active Tab */}
+      {activeTab === 'active' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Active Calls */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <PhoneIcon className="h-5 w-5 text-green-500 mr-2" />
+              Active Calls ({liveCalls.length})
+            </h3>
 
           {liveCalls.length === 0 ? (
             <EmptyState />
@@ -538,6 +612,133 @@ const LiveMonitor = () => {
           )}
         </div>
       </div>
+      ) : (
+        /* Call History Tab */
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Call History List */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <ClockIcon className="h-5 w-5 text-blue-500 mr-2" />
+              Recent Calls ({callHistoryData?.calls?.length || 0})
+            </h3>
+
+            {historyLoading ? (
+              <LoadingSpinner />
+            ) : !callHistoryData?.calls || callHistoryData.calls.length === 0 ? (
+              <EmptyState message="No call history available" />
+            ) : (
+              <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                {callHistoryData.calls.map((call) => (
+                  <div
+                    key={call.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                      selectedCall?.id === call.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => setSelectedCall(call)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                          call.automated ? 'bg-purple-100' : 
+                          call.status === 'completed' ? 'bg-green-100' : 
+                          call.status === 'failed' ? 'bg-red-100' : 'bg-gray-100'
+                        }`}>
+                          <PhoneIcon className={`h-5 w-5 ${
+                            call.automated ? 'text-purple-600' : 
+                            call.status === 'completed' ? 'text-green-600' : 
+                            call.status === 'failed' ? 'text-red-600' : 'text-gray-600'
+                          }`} />
+                        </div>
+                        <div className="ml-4">
+                          <div className="flex items-center space-x-2">
+                            <p className="text-sm font-medium text-gray-900">
+                              {call.contact?.firstName || call.contactName || 'Unknown'} {call.contact?.lastName || ''}
+                            </p>
+                            {call.automated && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                🤖 AUTO
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500">{call.contact?.phone || call.toPhone}</p>
+                          {call.campaign && (
+                            <p className="text-xs text-gray-400">{call.campaign.name}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium inline-block mb-1 ${
+                          call.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          call.status === 'failed' ? 'bg-red-100 text-red-800' :
+                          call.status === 'cancelled' ? 'bg-gray-100 text-gray-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {call.status}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {new Date(call.createdAt).toLocaleString()}
+                        </p>
+                        <span className="text-sm font-semibold text-gray-700">{formatDuration(call.duration)}</span>
+                      </div>
+                    </div>
+
+                    {/* Show cost and outcome for completed calls */}
+                    {call.status === 'completed' && (
+                      <div className="mt-2 flex items-center justify-between text-xs">
+                        {call.cost && (
+                          <span className="text-gray-600">
+                            Cost: ${call.cost.toFixed(4)}
+                          </span>
+                        )}
+                        {call.outcome && (
+                          <span className={`px-2 py-0.5 rounded ${
+                            call.outcome === 'sale' ? 'bg-green-100 text-green-700' :
+                            call.outcome === 'interested' ? 'bg-blue-100 text-blue-700' :
+                            call.outcome === 'not_interested' ? 'bg-gray-100 text-gray-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {call.outcome}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right: Call Details (Same as Active Calls) */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Call Details</h3>
+            {selectedCall ? (
+              <>
+                <CallDetails
+                  call={selectedCall}
+                  callDetails={callDetails}
+                  conversationHistory={conversationHistory}
+                  getEmotionColor={getEmotionColor}
+                  formatDuration={formatDuration}
+                  handleSendMessage={handleSendMessage}
+                  isLoading={detailsLoading || conversationLoading}
+                />
+
+                {/* Knowledge Suggestions */}
+                <div className="mt-6">
+                  <KnowledgeSuggestions
+                    callId={selectedCall.id}
+                    transcript={conversationHistory.map(msg => msg.content).join(' ')}
+                  />
+                </div>
+              </>
+            ) : (
+              <EmptyState message="Select a call to view details and conversation history" />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
