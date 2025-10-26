@@ -1,11 +1,10 @@
 import {
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  PencilIcon,
-  PlusIcon,
-  TrashIcon,
-  UserGroupIcon,
-  XMarkIcon
+    CheckCircleIcon,
+    ExclamationTriangleIcon,
+    PencilIcon,
+    PlusIcon,
+    TrashIcon,
+    XMarkIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useState } from 'react';
@@ -177,58 +176,6 @@ const UserManagement = () => {
           <PlusIcon className="h-5 w-5 mr-2" />
           Add User
         </button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center">
-            <UserGroupIcon className="h-8 w-8 text-blue-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold text-gray-900">{users.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center">
-            <div className="h-8 w-8 bg-red-100 rounded-lg flex items-center justify-center">
-              <span className="text-red-600 font-bold">A</span>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Admins</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {users.filter(u => u.roleType === 'admin').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center">
-            <div className="h-8 w-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <span className="text-blue-600 font-bold">M</span>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Managers</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {users.filter(u => u.roleType === 'manager').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center">
-            <div className="h-8 w-8 bg-green-100 rounded-lg flex items-center justify-center">
-              <span className="text-green-600 font-bold">A</span>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Agents</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {users.filter(u => u.roleType === 'agent').length}
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Users Table */}

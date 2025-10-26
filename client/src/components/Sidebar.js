@@ -1,36 +1,46 @@
 import {
     ArrowRightOnRectangleIcon,
     BookOpenIcon,
-    ChartBarIcon,
+    ChevronDownIcon,
+    ChevronUpIcon,
     ClipboardDocumentListIcon,
     CogIcon,
-    CpuChipIcon,
-    CreditCardIcon,
     DocumentTextIcon,
     EyeIcon,
     HomeIcon,
     MegaphoneIcon,
-    MicrophoneIcon,
     PhoneIcon,
     ShieldCheckIcon,
     UserGroupIcon,
     UsersIcon,
-    XMarkIcon,
+    XMarkIcon
 } from '@heroicons/react/24/outline';
-import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRoleAccess } from '../hooks/useRoleAccess';
 
-const Sidebar = ({ isOpen, onClose }) => {
+const Sidebar = ({ isOpen, onClose, onToggle }) => {
   const { canViewPage } = useRoleAccess();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [openDropdowns, setOpenDropdowns] = useState({
+    automatedCalls: false,
+    assignments: false
+  });
 
   const handleLogout = () => {
     logout();
     navigate('/login');
     onClose(); // Close sidebar after logout
+  };
+
+  const toggleDropdown = (dropdown) => {
+    setOpenDropdowns(prev => ({
+      ...prev,
+      [dropdown]: !prev[dropdown]
+    }));
   };
 
   // Agent-specific simplified navigation
@@ -41,23 +51,45 @@ const Sidebar = ({ isOpen, onClose }) => {
     { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['agent'] },
   ];
 
-  // Full navigation for other roles
+  // New navigation structure for admin/manager
   const fullNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, roles: ['admin', 'manager', 'data_uploader'] },
-    { name: 'Contacts & Leads', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
-    { name: 'Campaigns', href: '/campaigns', icon: MegaphoneIcon, roles: ['admin', 'manager'] },
-    { name: 'Calls', href: '/calls', icon: PhoneIcon, roles: ['admin', 'manager'] },
-    { name: 'Live Monitor', href: '/live-monitor', icon: EyeIcon, roles: ['admin', 'manager'] },
-    { name: 'Compliance', href: '/compliance', icon: ShieldCheckIcon, roles: ['admin', 'manager'] },
+    { name: 'Leads', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
+    {
+      name: 'Automated Calls',
+      icon: MegaphoneIcon,
+      roles: ['admin', 'manager'],
+      isDropdown: true,
+      dropdownKey: 'automatedCalls',
+      children: [
+        { name: 'Campaigns', href: '/campaigns', icon: MegaphoneIcon, roles: ['admin', 'manager'] },
+        { name: 'Live Monitoring', href: '/live-monitor', icon: EyeIcon, roles: ['admin', 'manager'] },
+        { name: 'Scripts', href: '/scripts', icon: DocumentTextIcon, roles: ['admin', 'manager'] },
+        { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpenIcon, roles: ['admin', 'manager'] },
+      ]
+    },
+    {
+      name: 'Assignments',
+      icon: UserGroupIcon,
+      roles: ['admin'],
+      isDropdown: true,
+      dropdownKey: 'assignments',
+      children: [
+        { name: 'Phone Numbers', href: '/phone-numbers', icon: PhoneIcon, roles: ['admin'] },
+        { name: 'Agent Assignments', href: '/agent-assignments', icon: UserGroupIcon, roles: ['admin'] },
+      ]
+    },
     { name: 'User Management', href: '/users', icon: UsersIcon, roles: ['admin'] },
-    { name: 'Phone Numbers', href: '/phone-numbers', icon: PhoneIcon, roles: ['admin'] },
-    { name: 'Agent Assignments', href: '/agent-assignments', icon: UserGroupIcon, roles: ['admin'] },
-    { name: 'Scripts', href: '/scripts', icon: DocumentTextIcon, roles: ['admin', 'manager'] },
     { name: 'Settings', href: '/settings', icon: CogIcon, roles: ['admin', 'manager'] },
+    { name: 'Compliance', href: '/compliance', icon: ShieldCheckIcon, roles: ['admin', 'manager'] },
   ];
 
   const navigation = user?.roleType === 'agent' ? agentNavigation : fullNavigation;
-  const filteredNavigation = navigation.filter(item => canViewPage(item.href.split('/')[1]));
+
+  // Check if any child route is active to keep dropdown open
+  const isChildActive = (children) => {
+    return children?.some(child => location.pathname === child.href);
+  };
 
   return (
     <>
@@ -91,27 +123,87 @@ const Sidebar = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-              <nav className='mt-6 px-3'>
-                <div className='space-y-1'>
-                  {filteredNavigation.map(item => (
-                    <NavLink
-                      key={item.name}
-                      to={item.href}
-                      className={({ isActive }) =>
-                        `group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                          isActive
-                            ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
-                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                        }`
-                      }
-                      onClick={onClose}
+        <nav className='mt-6 px-3 flex-1 overflow-y-auto'>
+          <div className='space-y-1'>
+            {navigation.map(item => {
+              // Check if user has access
+              const hasAccess = item.roles.includes(user?.roleType);
+              if (!hasAccess) return null;
+
+              // Dropdown menu item
+              if (item.isDropdown) {
+                const isOpen = openDropdowns[item.dropdownKey] || isChildActive(item.children);
+                const ChevronIcon = isOpen ? ChevronUpIcon : ChevronDownIcon;
+
+                return (
+                  <div key={item.name}>
+                    <button
+                      onClick={() => toggleDropdown(item.dropdownKey)}
+                      className={`group flex items-center justify-between w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                        isChildActive(item.children)
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
                     >
-                      <item.icon className='mr-3 h-5 w-5 flex-shrink-0' aria-hidden='true' />
-                      {item.name}
-                    </NavLink>
-                  ))}
-                </div>
-              </nav>
+                      <div className='flex items-center'>
+                        <item.icon className='mr-3 h-5 w-5 flex-shrink-0' aria-hidden='true' />
+                        {item.name}
+                      </div>
+                      <ChevronIcon className='h-4 w-4' />
+                    </button>
+
+                    {/* Dropdown children */}
+                    {isOpen && (
+                      <div className='ml-4 mt-1 space-y-1'>
+                        {item.children.map(child => {
+                          const hasChildAccess = child.roles.includes(user?.roleType);
+                          if (!hasChildAccess) return null;
+
+                          return (
+                            <NavLink
+                              key={child.name}
+                              to={child.href}
+                              className={({ isActive }) =>
+                                `group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                                  isActive
+                                    ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-700'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                }`
+                              }
+                              onClick={onClose}
+                            >
+                              <child.icon className='mr-3 h-4 w-4 flex-shrink-0' aria-hidden='true' />
+                              {child.name}
+                            </NavLink>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Regular menu item
+              return (
+                <NavLink
+                  key={item.name}
+                  to={item.href}
+                  className={({ isActive }) =>
+                    `group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    }`
+                  }
+                  onClick={onClose}
+                >
+                  <item.icon className='mr-3 h-5 w-5 flex-shrink-0' aria-hidden='true' />
+                  {item.name}
+                </NavLink>
+              );
+            })}
+          </div>
+        </nav>
 
         {/* User info and logout */}
         <div className='absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200'>
