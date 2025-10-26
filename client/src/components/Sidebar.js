@@ -44,17 +44,11 @@ const Sidebar = ({ isOpen, onClose }) => {
   // Full navigation for other roles
   const fullNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, roles: ['admin', 'manager', 'data_uploader'] },
-    { name: 'Lead Assignment', href: '/lead-assignment', icon: ClipboardDocumentListIcon, roles: ['admin', 'manager'] },
+    { name: 'Contacts & Leads', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
     { name: 'Campaigns', href: '/campaigns', icon: MegaphoneIcon, roles: ['admin', 'manager'] },
-    { name: 'Contacts', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
     { name: 'Calls', href: '/calls', icon: PhoneIcon, roles: ['admin', 'manager'] },
     { name: 'Live Monitor', href: '/live-monitor', icon: EyeIcon, roles: ['admin', 'manager'] },
-    { name: 'Voice Studio', href: '/voice-studio', icon: MicrophoneIcon, roles: ['admin', 'manager'] },
-    { name: 'AI Intelligence', href: '/ai-intelligence', icon: CpuChipIcon, roles: ['admin', 'manager'] },
-    { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpenIcon, roles: ['admin', 'manager'] },
     { name: 'Compliance', href: '/compliance', icon: ShieldCheckIcon, roles: ['admin', 'manager'] },
-    { name: 'Analytics', href: '/analytics', icon: ChartBarIcon, roles: ['admin', 'manager'] },
-    { name: 'Billing', href: '/billing', icon: CreditCardIcon, roles: ['admin', 'manager'] },
     { name: 'User Management', href: '/users', icon: UsersIcon, roles: ['admin'] },
     { name: 'Phone Numbers', href: '/phone-numbers', icon: PhoneIcon, roles: ['admin'] },
     { name: 'Agent Assignments', href: '/agent-assignments', icon: UserGroupIcon, roles: ['admin'] },

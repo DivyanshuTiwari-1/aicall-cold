@@ -23,10 +23,7 @@ const Calls = () => {
   const [filters, setFilters] = useState({
     search: '',
     campaign: '',
-    outcome: '',
-    emotion: '',
     callType: '', // 'automated' or 'manual'
-    dateRange: '7d',
   });
   const [selectedCall, setSelectedCall] = useState(null);
   const [showCallDetails, setShowCallDetails] = useState(false);
@@ -209,7 +206,7 @@ const Calls = () => {
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Filters</h3>
-        <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${isAgent ? 'lg:grid-cols-3' : 'lg:grid-cols-6'}`}>
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${isAgent ? 'lg:grid-cols-2' : 'lg:grid-cols-3'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <div className="relative">
@@ -250,51 +247,6 @@ const Calls = () => {
               </select>
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Outcome</label>
-            <select
-              value={filters.outcome}
-              onChange={(e) => setFilters({ ...filters, outcome: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Outcomes</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="fit">Fit</option>
-              <option value="connected">Connected</option>
-              <option value="not_fit">Not Fit</option>
-              <option value="no_answer">No Answer</option>
-            </select>
-          </div>
-          {!isAgent && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Emotion</label>
-              <select
-                value={filters.emotion}
-                onChange={(e) => setFilters({ ...filters, emotion: e.target.value })}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">All Emotions</option>
-                <option value="interested">Interested</option>
-                <option value="positive">Positive</option>
-                <option value="neutral">Neutral</option>
-                <option value="confused">Confused</option>
-                <option value="frustrated">Frustrated</option>
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
-            <select
-              value={filters.dateRange}
-              onChange={(e) => setFilters({ ...filters, dateRange: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="1d">Last 24 hours</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-            </select>
-          </div>
         </div>
       </div>
 

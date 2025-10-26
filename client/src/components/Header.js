@@ -63,22 +63,8 @@ const Header = ({ onMenuClick }) => {
           )}
         </div>
 
-        {/* Status Metrics and User Menu */}
+        {/* User Menu */}
         <div className='flex items-center space-x-6'>
-          {/* Credits and CSAT - Only for non-agents */}
-          {!isAgent && (
-            <>
-              <div className='text-right'>
-                <p className='text-sm text-gray-500'> Credits Remaining </p>
-                <p className='text-lg font-semibold text-blue-600'> 8, 450 </p>
-              </div>
-              <div className='text-right'>
-                <p className='text-sm text-gray-500'> Avg CSAT </p>
-                <p className='text-lg font-semibold text-green-600'> 4.2 / 5.0 </p>
-              </div>
-            </>
-          )}
-
           {/* Settings Button */}
           <button
             onClick={handleSettingsClick}
