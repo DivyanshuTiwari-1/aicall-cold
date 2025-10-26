@@ -1,16 +1,9 @@
 import {
-    BookOpenIcon,
     ChartBarIcon,
-    ChartPieIcon,
     ClipboardDocumentListIcon,
     CogIcon,
-    CpuChipIcon,
-    DocumentArrowUpIcon,
     MegaphoneIcon,
     PhoneIcon,
-    ShieldCheckIcon,
-    SignalIcon,
-    SpeakerWaveIcon,
     UserGroupIcon
 } from "@heroicons/react/24/outline";
 import React from "react";
@@ -21,7 +14,7 @@ const Navigation = () => {
     const { user } = useAuth();
     const roleType = user?.roleType || 'agent';
 
-    // Role-based navigation items
+    // Simplified navigation items
     const getNavigationItems = () => {
         // Agent-specific navigation (simplified)
         if (roleType === 'agent') {
@@ -33,46 +26,12 @@ const Navigation = () => {
             ];
         }
 
-        const baseItems = [
-            { name: "Dashboard", href: "/dashboard", icon: ChartBarIcon, roles: ['admin', 'manager'] },
+        // Simplified navigation for admin/manager/data_uploader
+        return [
+            { name: "Dashboard", href: "/dashboard", icon: ChartBarIcon, roles: ['admin', 'manager', 'data_uploader'] },
+            { name: "Contacts & Leads", href: "/contacts", icon: UserGroupIcon, roles: ['admin', 'manager', 'data_uploader'] },
             { name: "Campaigns", href: "/campaigns", icon: MegaphoneIcon, roles: ['admin', 'manager'] },
-            { name: "Contacts", href: "/contacts", icon: UserGroupIcon, roles: ['admin', 'manager', 'data_uploader'] },
         ];
-
-        // Manager-specific items
-        if (['manager', 'admin'].includes(roleType)) {
-            baseItems.push(
-                { name: "Team Performance", href: "/team-performance", icon: ChartPieIcon, roles: ['manager', 'admin'] },
-                { name: "Live Monitor", href: "/live-monitor", icon: SignalIcon, roles: ['manager', 'admin'] }
-            );
-        }
-
-        // Admin-specific items
-        if (['admin'].includes(roleType)) {
-            baseItems.push(
-                { name: "User Management", href: "/users", icon: UserGroupIcon, roles: ['admin'] },
-                { name: "Lead Assignment", href: "/lead-assignment", icon: DocumentArrowUpIcon, roles: ['admin'] },
-                { name: "Executive View", href: "/executive", icon: ChartPieIcon, roles: ['admin'] }
-            );
-        }
-
-        // Data uploader specific items
-        if (['data_uploader', 'admin'].includes(roleType)) {
-            baseItems.push({ name: "Upload Contacts", href: "/upload-contacts", icon: DocumentArrowUpIcon, roles: ['data_uploader', 'admin'] });
-        }
-
-        // Common items for admin and manager
-        if (['admin', 'manager'].includes(roleType)) {
-            baseItems.push(
-                { name: "Voice Studio", href: "/voice-studio", icon: SpeakerWaveIcon, roles: ['admin', 'manager'] },
-                { name: "AI Intelligence", href: "/ai-intelligence", icon: CpuChipIcon, roles: ['admin', 'manager'] },
-                { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpenIcon, roles: ['admin', 'manager'] },
-                { name: "Compliance", href: "/compliance", icon: ShieldCheckIcon, roles: ['admin', 'manager'] }
-            );
-        }
-
-        // Filter items based on user role
-        return baseItems.filter(item => item.roles.includes(roleType));
     };
 
     const navigation = getNavigationItems();
