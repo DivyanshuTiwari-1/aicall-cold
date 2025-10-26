@@ -21,6 +21,7 @@ import Calls from './pages/Calls';
 import Campaigns from './pages/Campaigns';
 import Compliance from './pages/Compliance';
 import Contacts from './pages/Contacts';
+import ContactsAndLeads from './pages/ContactsAndLeads';
 import Dashboard from './pages/Dashboard';
 import DataUploaderDashboard from './pages/DataUploaderDashboard';
 import ExecutiveDashboard from './pages/ExecutiveDashboard';
@@ -157,7 +158,7 @@ function App() {
                 <Route path='ai-intelligence' element={<AIIntelligence />} />
                 <Route path='knowledge-base' element={<KnowledgeBase />} />
                 <Route path='compliance' element={<Compliance />} />
-                <Route path='contacts' element={<Contacts />} />
+                <Route path='contacts' element={<ContactsAndLeads />} />
                 <Route path='analytics' element={<Analytics />} />
                 <Route path='billing' element={<Billing />} />
                 <Route path='scripts' element={<Scripts />} />
