@@ -219,9 +219,9 @@ class AutomatedCallQueue {
             const callResult = await query(`
                 INSERT INTO calls (
                     id, organization_id, campaign_id, contact_id,
-                    status, cost, call_type, from_number, created_at
+                    status, cost, call_type, from_number, to_number, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
                 RETURNING *
             `, [
                 callId,
@@ -231,7 +231,8 @@ class AutomatedCallQueue {
                 'initiated',
                 0.0045,
                 'automated',
-                queue.phoneNumber || null
+                queue.phoneNumber || null,
+                contact.phone
             ]);
 
             const call = callResult.rows[0];
@@ -370,22 +371,15 @@ class AutomatedCallQueue {
 const callQueue = new AutomatedCallQueue();
 
 // Start queue monitoring cron job
+// NOTE: Auto-start is disabled because queues need phone numbers assigned
+// Queues must be manually started with a phone number from the dashboard
 cron.schedule('*/30 * * * * *', async() => {
     try {
-        // Check for campaigns that should be running but aren't
-        // Note: This monitoring is simplified since we track active queues in memory
-        const result = await query(`
-            SELECT id FROM campaigns
-            WHERE status = 'active'
-        `);
+        // Monitor for stuck queues or cleanup only
+        // Do not auto-start queues without phone number assignments
 
-        // Only start queues that aren't already active
-        for (const campaign of result.rows) {
-            if (!callQueue.activeQueues.has(campaign.id)) {
-                logger.info(`Auto-starting queue for campaign ${campaign.id}`);
-                await callQueue.startQueue(null, campaign.id);
-            }
-        }
+        // Future: Could auto-start if we store default phone number per campaign
+        logger.debug('Queue monitoring: Auto-start disabled (requires manual start with phone number)');
     } catch (error) {
         logger.error('Queue monitoring error:', error);
     }

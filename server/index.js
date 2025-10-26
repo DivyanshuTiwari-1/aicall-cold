@@ -42,6 +42,7 @@ const { authenticateToken } = require('./middleware/auth');
 const stasisManager = require('./services/stasis-apps');
 const addSipFields = require('./scripts/migrations/add-sip-fields');
 const addTranscriptField = require('./scripts/migrations/add-transcript-field');
+const addPhoneNumberFields = require('./scripts/migrations/add-phone-number-fields');
 
 const app = express();
 const server = createServer(app);
@@ -314,6 +315,7 @@ async function startServer() {
         // Run migrations
         await addSipFields();
         await addTranscriptField();
+        await addPhoneNumberFields();
 
         // Initialize Stasis applications (non-blocking - will retry if Asterisk not ready)
         stasisManager.initialize().catch(err => {

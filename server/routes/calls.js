@@ -710,6 +710,11 @@ const automatedCallSchema = Joi.object({
     phoneNumberId: Joi.string().uuid().required()
 });
 
+// Validation schema for stopping automated calls (only needs campaignId)
+const stopAutomatedCallSchema = Joi.object({
+    campaignId: Joi.string().uuid().required()
+});
+
 // Start automated calls for a campaign
 router.post('/automated/start', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
@@ -848,7 +853,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
 // Stop automated calls for a campaign
 router.post('/automated/stop', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
-        const { error, value } = automatedCallSchema.validate(req.body);
+        const { error, value } = stopAutomatedCallSchema.validate(req.body);
         if (error) {
             return res.status(400).json({
                 success: false,

@@ -6,7 +6,7 @@ const router = express.Router();
 
 /**
  * SIMPLIFIED Conversation Processing
- * 
+ *
  * NO emotion analysis, NO warm transfers, NO complex AI
  * Just intelligent script-based conversation management
  */
@@ -27,7 +27,7 @@ router.post('/simple-process', async (req, res) => {
 
         // Get call and contact info
         const callResult = await query(`
-            SELECT c.*, ct.first_name, ct.last_name, ct.company, 
+            SELECT c.*, ct.first_name, ct.last_name, ct.company,
                    cp.name as campaign_name, c.organization_id
             FROM calls c
             JOIN contacts ct ON c.contact_id = ct.id
@@ -56,7 +56,7 @@ router.post('/simple-process', async (req, res) => {
         let script_content = '';
         if (scriptResult.rows.length > 0) {
             script_content = scriptResult.rows[0].content;
-            
+
             // Replace variables
             script_content = script_content
                 .replace(/\{first_name\}/g, call.first_name || 'there')
@@ -70,7 +70,7 @@ router.post('/simple-process', async (req, res) => {
         // Log conversation turn
         await query(`
             INSERT INTO call_events (call_id, event_type, event_data)
-            VALUES ($1, 'conversation_turn', $2)
+            VALUES ($1, 'ai_conversation', $2)
         `, [call_id, JSON.stringify({
             turn,
             user_input,
@@ -85,7 +85,7 @@ router.post('/simple-process', async (req, res) => {
 
         switch (analysis.intent) {
             case 'interested':
-                ai_response = "That's great to hear! Let me tell you more about how we can help you. " + 
+                ai_response = "That's great to hear! Let me tell you more about how we can help you. " +
                              (script_content ? script_content.split('.').slice(1, 3).join('.') : '');
                 action = 'continue';
                 break;
@@ -94,7 +94,7 @@ router.post('/simple-process', async (req, res) => {
                 ai_response = "I understand. Thank you for your time. Have a great day!";
                 should_continue = false;
                 action = 'end_call';
-                
+
                 // Update call outcome
                 await query(`
                     UPDATE calls SET outcome = 'not_interested' WHERE id = $1
@@ -111,7 +111,7 @@ router.post('/simple-process', async (req, res) => {
                 ai_response = "Perfect! Someone from our team will call you back within 24 hours. Thank you!";
                 should_continue = false;
                 action = 'schedule_callback';
-                
+
                 await query(`
                     UPDATE calls SET outcome = 'callback' WHERE id = $1
                 `, [call_id]);
@@ -121,14 +121,14 @@ router.post('/simple-process', async (req, res) => {
                 ai_response = "I understand. I'll make sure you're removed from our calling list. Apologies for any inconvenience.";
                 should_continue = false;
                 action = 'dnc';
-                
+
                 // Add to DNC list
                 await query(`
                     INSERT INTO dnc_registry (organization_id, phone, reason, source)
                     VALUES ($1, $2, 'Customer request', 'automated_call')
                     ON CONFLICT (organization_id, phone) DO NOTHING
                 `, [call.organization_id, call.to_number]);
-                
+
                 await query(`
                     UPDATE calls SET outcome = 'dnc_request' WHERE id = $1
                 `, [call_id]);
@@ -148,12 +148,13 @@ router.post('/simple-process', async (req, res) => {
                 break;
         }
 
-        // Log AI response
+        // Log AI response (update the conversation event with AI response)
         await query(`
             INSERT INTO call_events (call_id, event_type, event_data)
-            VALUES ($1, 'ai_response', $2)
+            VALUES ($1, 'ai_conversation', $2)
         `, [call_id, JSON.stringify({
             turn,
+            user_input,
             ai_response,
             intent: analysis.intent,
             action,
@@ -206,7 +207,7 @@ function analyzeCustomerResponse(input) {
 async function getKnowledgeAnswer(question, organizationId) {
     try {
         const keywords = question.toLowerCase().split(' ').filter(w => w.length > 3);
-        
+
         if (keywords.length === 0) return null;
 
         const result = await query(`
@@ -234,7 +235,3 @@ async function getKnowledgeAnswer(question, organizationId) {
 }
 
 module.exports = router;
-
-
-
-
