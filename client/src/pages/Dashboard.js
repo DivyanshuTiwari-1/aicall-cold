@@ -4,7 +4,9 @@ import {
     ChartBarIcon,
     ChartPieIcon,
     CheckCircleIcon,
+    ClockIcon,
     CurrencyDollarIcon,
+    EyeIcon,
     HandThumbUpIcon,
     PhoneIcon,
     UserGroupIcon,
@@ -15,6 +17,8 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import analyticsAPI from '../services/analytics';
+import { callsAPI } from '../services/calls';
+import { campaignsAPI } from '../services/campaigns';
 import { usersAPI } from '../services/users';
 
 const Dashboard = () => {
@@ -23,6 +27,13 @@ const Dashboard = () => {
   const { addListener, isConnected } = useWebSocket();
   const [dateRange, setDateRange] = useState('7d');
   const [activeTab, setActiveTab] = useState('overview');
+  
+  // Call History filters
+  const [callFilters, setCallFilters] = useState({
+    type: 'all',
+    campaign: 'all',
+    search: '',
+  });
 
   const {
     data: analytics,
@@ -53,6 +64,27 @@ const Dashboard = () => {
     queryKey: ['live-calls'],
     queryFn: () => analyticsAPI.getLiveCalls(),
     refetchInterval: 10000,
+  });
+
+  // Fetch call history for Call History tab
+  const { data: callHistoryData, isLoading: callHistoryLoading } = useQuery({
+    queryKey: ['call-history-dashboard', callFilters],
+    queryFn: () => callsAPI.getCalls({
+      limit: 100,
+      offset: 0,
+      ...callFilters,
+      type: callFilters.type === 'all' ? undefined : callFilters.type,
+      campaign_id: callFilters.campaign === 'all' ? undefined : callFilters.campaign,
+    }),
+    refetchInterval: 30000,
+    enabled: activeTab === 'call-history',
+  });
+
+  // Fetch campaigns for filter dropdown
+  const { data: campaignsData } = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: () => campaignsAPI.getCampaigns(),
+    enabled: activeTab === 'call-history',
   });
 
   // Set up WebSocket listeners for real-time updates
@@ -188,6 +220,7 @@ const Dashboard = () => {
     { id: 'overview', name: 'Overview' },
     { id: 'executive', name: 'Executive View' },
     { id: 'team', name: 'Team Performance' },
+    { id: 'call-history', name: 'Call History' },
   ];
 
   return (
@@ -808,8 +841,265 @@ const Dashboard = () => {
           </div>
         </>
       )}
+
+      {activeTab === 'call-history' && (
+        <>
+          {/* Summary Stats */}
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-6 mb-6'>
+            <div className='bg-white rounded-lg shadow-sm p-6'>
+              <div className='flex items-center'>
+                <PhoneIcon className='h-8 w-8 text-blue-600' />
+                <div className='ml-4'>
+                  <p className='text-sm font-medium text-gray-500'>Total Calls</p>
+                  <p className='text-2xl font-semibold text-gray-900'>
+                    {callHistoryData?.total || 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className='bg-white rounded-lg shadow-sm p-6'>
+              <div className='flex items-center'>
+                <CheckCircleIcon className='h-8 w-8 text-green-600' />
+                <div className='ml-4'>
+                  <p className='text-sm font-medium text-gray-500'>Answered</p>
+                  <p className='text-2xl font-semibold text-gray-900'>
+                    {callHistoryData?.calls?.filter(c => c.status === 'completed').length || 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className='bg-white rounded-lg shadow-sm p-6'>
+              <div className='flex items-center'>
+                <ClockIcon className='h-8 w-8 text-purple-600' />
+                <div className='ml-4'>
+                  <p className='text-sm font-medium text-gray-500'>Avg Duration</p>
+                  <p className='text-2xl font-semibold text-gray-900'>
+                    {callHistoryData?.calls?.length > 0
+                      ? formatDuration(
+                          callHistoryData.calls.reduce((sum, call) => sum + (call.duration || 0), 0) /
+                            callHistoryData.calls.length
+                        )
+                      : '0:00'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className='bg-white rounded-lg shadow-sm p-6'>
+              <div className='flex items-center'>
+                <ChartBarIcon className='h-8 w-8 text-orange-600' />
+                <div className='ml-4'>
+                  <p className='text-sm font-medium text-gray-500'>Success Rate</p>
+                  <p className='text-2xl font-semibold text-gray-900'>
+                    {callHistoryData?.calls?.length > 0
+                      ? Math.round(
+                          (callHistoryData.calls.filter(c => c.status === 'completed').length /
+                            callHistoryData.calls.length) *
+                            100
+                        )
+                      : 0}
+                    %
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className='bg-white rounded-lg shadow-sm p-6 mb-6'>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Filters</h3>
+            <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+              <div>
+                <label className='block text-sm font-medium text-gray-700 mb-2'>Search</label>
+                <input
+                  type='text'
+                  placeholder='Search by contact name...'
+                  value={callFilters.search}
+                  onChange={(e) => setCallFilters({ ...callFilters, search: e.target.value })}
+                  className='w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                />
+              </div>
+              <div>
+                <label className='block text-sm font-medium text-gray-700 mb-2'>Call Type</label>
+                <select
+                  value={callFilters.type}
+                  onChange={(e) => setCallFilters({ ...callFilters, type: e.target.value })}
+                  className='w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                >
+                  <option value='all'>All Calls</option>
+                  <option value='manual'>Manual</option>
+                  <option value='automated'>Automated</option>
+                </select>
+              </div>
+              <div>
+                <label className='block text-sm font-medium text-gray-700 mb-2'>Campaign</label>
+                <select
+                  value={callFilters.campaign}
+                  onChange={(e) => setCallFilters({ ...callFilters, campaign: e.target.value })}
+                  className='w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                >
+                  <option value='all'>All Campaigns</option>
+                  {campaignsData?.campaigns?.map((campaign) => (
+                    <option key={campaign.id} value={campaign.id}>
+                      {campaign.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Call History Table */}
+          <div className='bg-white rounded-lg shadow-sm overflow-hidden'>
+            <div className='px-6 py-4 border-b border-gray-200'>
+              <h3 className='text-lg font-semibold text-gray-900'>Call History</h3>
+              <p className='text-sm text-gray-500 mt-1'>
+                Tip: Click the <EyeIcon className='h-4 w-4 inline' /> View button in the "Conversation" column to see the full chat transcript and AI insights for each call.
+              </p>
+            </div>
+            
+            {callHistoryLoading ? (
+              <div className='p-8 text-center'>
+                <LoadingSpinner />
+              </div>
+            ) : !callHistoryData?.calls || callHistoryData.calls.length === 0 ? (
+              <div className='text-center py-12'>
+                <PhoneIcon className='h-12 w-12 text-gray-400 mx-auto mb-4' />
+                <p className='text-gray-500'>No call history available</p>
+              </div>
+            ) : (
+              <div className='overflow-x-auto'>
+                <table className='min-w-full divide-y divide-gray-200'>
+                  <thead className='bg-gray-50'>
+                    <tr>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Contact
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Type
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Campaign
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Duration
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Emotion
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Outcome
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        CSAT
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Date
+                      </th>
+                      <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+                        Conversation
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className='bg-white divide-y divide-gray-200'>
+                    {callHistoryData.calls.map((call) => (
+                      <tr key={call.id} className='hover:bg-gray-50'>
+                        <td className='px-6 py-4 whitespace-nowrap'>
+                          <div className='flex items-center'>
+                            <div className='flex-shrink-0 h-10 w-10'>
+                              <div className='h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center'>
+                                <span className='text-blue-600 font-medium text-sm'>
+                                  {call.contact?.firstName?.[0] || 'U'}
+                                  {call.contact?.lastName?.[0] || ''}
+                                </span>
+                              </div>
+                            </div>
+                            <div className='ml-4'>
+                              <div className='text-sm font-medium text-gray-900'>
+                                {call.contact?.firstName || call.contactName || 'Unknown'} {call.contact?.lastName || ''}
+                              </div>
+                              <div className='text-sm text-gray-500'>{call.contact?.phone || call.toPhone}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap'>
+                          {call.automated ? (
+                            <span className='inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800'>
+                              🤖 Automated
+                            </span>
+                          ) : (
+                            <span className='inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
+                              👤 Manual
+                            </span>
+                          )}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900'>
+                          {call.campaign?.name || '-'}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                          {call.duration ? formatDuration(call.duration) : '-'}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap'>
+                          {call.emotion && call.emotion !== 'unknown' ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              call.emotion === 'positive' ? 'bg-green-100 text-green-800' :
+                              call.emotion === 'interested' ? 'bg-blue-100 text-blue-800' :
+                              call.emotion === 'neutral' ? 'bg-gray-100 text-gray-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {call.emotion}
+                            </span>
+                          ) : (
+                            <span className='text-sm text-gray-400'>Unknown</span>
+                          )}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap'>
+                          {call.outcome && call.outcome !== 'no_answer' ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              call.outcome === 'sale' ? 'bg-green-100 text-green-800' :
+                              call.outcome === 'interested' ? 'bg-blue-100 text-blue-800' :
+                              call.outcome === 'not_interested' ? 'bg-gray-100 text-gray-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {call.outcome.replace('_', ' ')}
+                            </span>
+                          ) : (
+                            <span className='text-sm text-gray-400'>{call.outcome || 'no_answer'}</span>
+                          )}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                          {call.csat || '-'}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                          {new Date(call.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap text-sm font-medium'>
+                          <button
+                            onClick={() => window.location.href = `/call-history/${call.id}`}
+                            className='text-blue-600 hover:text-blue-900 inline-flex items-center'
+                          >
+                            <EyeIcon className='h-4 w-4 mr-1' />
+                            Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
+};
+
+// Helper function to format duration
+const formatDuration = (seconds) => {
+  if (!seconds) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 export default Dashboard;
