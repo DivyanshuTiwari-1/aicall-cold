@@ -59,25 +59,30 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      API_INTERNAL_URL: http://backend:3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-ai_dialer_user}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/${POSTGRES_DB:-ai_dialer}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
-      
+
       # Telnyx (SIP only, ~$0.004/min)
       TELNYX_API_KEY: ${TELNYX_API_KEY}
       TELNYX_SIP_USERNAME: ${TELNYX_SIP_USERNAME}
       TELNYX_SIP_PASSWORD: ${TELNYX_SIP_PASSWORD}
       TELNYX_PHONE_NUMBER: ${TELNYX_PHONE_NUMBER}
-      
+
       # Piper TTS (human-like voice, FREE)
       TTS_ENGINE: piper
       PIPER_PATH: /usr/local/bin/piper
       PIPER_MODEL_PATH: /models/piper
-      
+
       # Vosk STT (speech recognition, FREE)
       STT_ENGINE: vosk
       VOSK_MODEL_PATH: /models/vosk/vosk-model-small-en-us-0.15
-      
+
+      # FastAGI Configuration
+      AGI_HOST: backend
+      AGI_PORT: 4573
+
     volumes:
       - ./server:/app
       - ./models:/models
@@ -86,6 +91,7 @@ services:
       - ./logs:/app/logs
     ports:
       - "3000:3000"
+      - "4573:4573"  # FastAGI port for AI automated calls
     depends_on:
       - postgres
       - redis
@@ -105,6 +111,8 @@ services:
       - ./server/asterisk:/var/lib/asterisk/agi-bin
     environment:
       - AI_DIALER_URL=http://localhost:3000/api/v1
+      - AGI_HOST=localhost
+      - AGI_PORT=4573
     depends_on:
       - backend
 
@@ -129,8 +137,3 @@ volumes:
 networks:
   default:
     name: ai-dialer-network
-
-
-
-
-

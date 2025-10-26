@@ -235,6 +235,18 @@ class AutomatedCallQueue {
                 contact.phone
             ]);
 
+            // Broadcast call started via WebSocket
+            const WebSocketBroadcaster = require('./websocket-broadcaster');
+            WebSocketBroadcaster.broadcastCallStarted(contact.organization_id, {
+                callId: callId,
+                contactId: contact.id,
+                campaignId: campaignId,
+                phoneNumber: contact.phone,
+                fromNumber: queue.phoneNumber,
+                contactName: `${contact.first_name} ${contact.last_name}`,
+                automated: true
+            });
+
             const call = callResult.rows[0];
 
             // Log call initiation event

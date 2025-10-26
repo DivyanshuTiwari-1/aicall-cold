@@ -40,9 +40,11 @@ const { createTables } = require('./scripts/migrate');
 const logger = require('./utils/logger');
 const { authenticateToken } = require('./middleware/auth');
 const stasisManager = require('./services/stasis-apps');
+const AgiServer = require('./services/agi/agi-server');
 const addSipFields = require('./scripts/migrations/add-sip-fields');
 const addTranscriptField = require('./scripts/migrations/add-transcript-field');
 const addPhoneNumberFields = require('./scripts/migrations/add-phone-number-fields');
+const addCallStatusFields = require('./scripts/migrations/add-call-status-fields');
 
 const app = express();
 const server = createServer(app);
@@ -316,6 +318,7 @@ async function startServer() {
         await addSipFields();
         await addTranscriptField();
         await addPhoneNumberFields();
+        await addCallStatusFields();
 
         // Initialize Stasis applications (non-blocking - will retry if Asterisk not ready)
         stasisManager.initialize().catch(err => {
@@ -332,11 +335,27 @@ async function startServer() {
             }, 10000);
         });
 
+        // Initialize FastAGI Server for AI conversations
+        const AGI_PORT = parseInt(process.env.AGI_PORT) || 4573;
+        const agiServer = new AgiServer(AGI_PORT);
+
+        try {
+            await agiServer.start();
+            logger.info(`✅ FastAGI Server started on port ${AGI_PORT}`);
+
+            // Store globally for cleanup
+            global.agiServer = agiServer;
+        } catch (agiError) {
+            logger.error('❌ Failed to start FastAGI Server:', agiError);
+            logger.warn('⚠️  AI automated calls will not work without AGI server');
+        }
+
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
             logger.info(`🚀 AI Dialer API Server running on port ${PORT}`);
             logger.info(`📊 Health check: http://localhost:${PORT}/health`);
             logger.info(`🔌 WebSocket server ready for real-time connections`);
+            logger.info(`🤖 FastAGI Server ready for AI conversations on port ${AGI_PORT}`);
         });
     } catch (error) {
         logger.error('Failed to start server:', error);
@@ -348,12 +367,18 @@ async function startServer() {
 process.on('SIGINT', async () => {
     logger.info('🔄 Received SIGINT, shutting down gracefully...');
     await stasisManager.shutdown();
+    if (global.agiServer) {
+        await global.agiServer.stop();
+    }
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     logger.info('🔄 Received SIGTERM, shutting down gracefully...');
     await stasisManager.shutdown();
+    if (global.agiServer) {
+        await global.agiServer.stop();
+    }
     process.exit(0);
 });
 

@@ -260,10 +260,7 @@ router.post('/process', async(req, res) => {
         };
 
         // Log conversation event
-        await query(`
-            INSERT INTO call_events (call_id, event_type, event_data)
-            VALUES ($1, $2, $3)
-        `, [call_id, 'ai_conversation', JSON.stringify({
+        const conversationEventData = {
             user_input: user_input,
             ai_response: response.answer,
             confidence: response.confidence,
@@ -271,7 +268,22 @@ router.post('/process', async(req, res) => {
             emotion: response.emotion,
             timestamp: new Date().toISOString(),
             context: context
-        })]);
+        };
+
+        await query(`
+            INSERT INTO call_events (call_id, event_type, event_data)
+            VALUES ($1, $2, $3)
+        `, [call_id, 'ai_conversation', JSON.stringify(conversationEventData)]);
+
+        // Broadcast conversation turn via WebSocket
+        const WebSocketBroadcaster = require('../services/websocket-broadcaster');
+        if (call.organization_id) {
+            WebSocketBroadcaster.broadcastConversationTurn(
+                call.organization_id,
+                call_id,
+                conversationEventData
+            );
+        }
 
         res.json(response);
 

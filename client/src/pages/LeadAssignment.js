@@ -39,7 +39,7 @@ const LeadAssignment = () => {
 
   // Fetch assignments
   const { data: assignmentsData, isLoading: assignmentsLoading, error: assignmentsError } = useQuery({
-    queryKey: ['assignments'],
+    queryKey: ['assignments', filters],
     queryFn: () => assignmentsAPI.getAssignments(filters),
     refetchInterval: 30000,
   });
@@ -53,7 +53,7 @@ const LeadAssignment = () => {
 
   // Fetch contacts for assignment
   const { data: contactsData, isLoading: contactsLoading } = useQuery({
-    queryKey: ['contacts-for-assignment'],
+    queryKey: ['contacts-for-assignment', filters],
     queryFn: () => contactsAPI.getContacts({
       limit: 100,
       ...filters,

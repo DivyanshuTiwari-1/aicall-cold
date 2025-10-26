@@ -7,6 +7,7 @@ services:
     container_name: ai_dialer_server
     ports:
       - "3000:3000"
+      - "4573:4573"  # FastAGI port for Asterisk
     environment:
       # Database
       - DB_HOST=postgres
@@ -25,6 +26,7 @@ services:
       - DOCKER_ENV=true
       - PORT=3000
       - API_URL=http://localhost:3000/api/v1
+      - API_INTERNAL_URL=http://ai_dialer:3000
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
       - JWT_EXPIRES_IN=24h
 
@@ -32,6 +34,10 @@ services:
       - ARI_URL=http://asterisk:8088/ari
       - ARI_USERNAME=ai-dialer
       - ARI_PASSWORD=ai-dialer-password
+
+      # FastAGI Configuration (for AI automated calls)
+      - AGI_HOST=ai_dialer
+      - AGI_PORT=4573
 
       # Asterisk WebRTC Configuration
       - ASTERISK_HOST=localhost
@@ -171,6 +177,8 @@ services:
       - ./asterisk-config/pjsip_dynamic.conf:/etc/asterisk/pjsip_dynamic.conf
     environment:
       - ARI_PASSWORD=ai-dialer-password
+      - AGI_HOST=ai_dialer
+      - AGI_PORT=4573
     restart: always
 
   # 🗄️ PostgreSQL Database

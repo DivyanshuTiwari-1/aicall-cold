@@ -107,22 +107,22 @@ jobs:
             # Smart rebuild - only rebuild what changed
             if [ "$REBUILD_FRONTEND" = true ] || [ "$REBUILD_BACKEND" = true ] || [ "$REBUILD_ASTERISK" = true ]; then
                 echo "🔨 Rebuilding changed services in parallel..."
-                
+
                 # Build list of services to rebuild
                 SERVICES_TO_BUILD=""
-                
+
                 if [ "$REBUILD_FRONTEND" = true ]; then
                     SERVICES_TO_BUILD="$SERVICES_TO_BUILD frontend"
                 fi
-                
+
                 if [ "$REBUILD_BACKEND" = true ]; then
                     SERVICES_TO_BUILD="$SERVICES_TO_BUILD backend"
                 fi
-                
+
                 if [ "$REBUILD_ASTERISK" = true ]; then
                     SERVICES_TO_BUILD="$SERVICES_TO_BUILD asterisk"
                 fi
-                
+
                 echo "   📦 Building: $SERVICES_TO_BUILD"
                 docker-compose -f docker-compose.demo.yml build --parallel $SERVICES_TO_BUILD
 

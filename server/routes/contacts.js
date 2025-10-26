@@ -482,8 +482,11 @@ router.get('/', authenticateToken, async(req, res) => {
     try {
         const {
             campaign_id,
+            campaign,
             status,
             search,
+            assigned,
+            unassigned,
             limit = 50,
             offset = 0
         } = req.query;
@@ -492,10 +495,12 @@ router.get('/', authenticateToken, async(req, res) => {
         const params = [req.organizationId];
         let paramCount = 1;
 
-        if (campaign_id) {
+        // Support both campaign_id and campaign query params
+        const campaignFilter = campaign_id || campaign;
+        if (campaignFilter) {
             paramCount++;
             whereClause += ` AND c.campaign_id = $${paramCount}`;
-            params.push(campaign_id);
+            params.push(campaignFilter);
         }
 
         if (status) {
@@ -508,6 +513,13 @@ router.get('/', authenticateToken, async(req, res) => {
             paramCount++;
             whereClause += ` AND (c.first_name ILIKE $${paramCount} OR c.last_name ILIKE $${paramCount} OR c.phone ILIKE $${paramCount} OR c.email ILIKE $${paramCount} OR c.company ILIKE $${paramCount})`;
             params.push(`%${search}%`);
+        }
+
+        // Filter by assignment status
+        if (assigned === 'assigned') {
+            whereClause += ` AND la.assigned_to IS NOT NULL AND la.status IN ('pending', 'in_progress')`;
+        } else if (assigned === 'unassigned' || unassigned === 'true' || unassigned === true) {
+            whereClause += ` AND (la.assigned_to IS NULL OR la.status NOT IN ('pending', 'in_progress'))`;
         }
 
         const result = await query(`

@@ -27,12 +27,12 @@ const LiveMonitor = () => {
   const [conversationHistory, setConversationHistory] = useState([]);
   const [isMonitoring, setIsMonitoring] = useState(true);
 
-  // Fetch live calls
-  const { data: liveCallsData, isLoading, error } = useQuery({
+  // Fetch live calls initially
+  const { data: liveCallsData, isLoading, error, refetch } = useQuery({
     queryKey: ['live-calls'],
     queryFn: () => analyticsAPI.getLiveCalls(),
-    refetchInterval: isMonitoring ? 5000 : false,
-    enabled: isMonitoring,
+    refetchInterval: false, // Disabled polling - using WebSocket now
+    enabled: true,
   });
 
   // Fetch call details with conversation
@@ -67,28 +67,87 @@ const LiveMonitor = () => {
     if (!isConnected || !user?.organizationId) return;
 
     const handleCallUpdate = (data) => {
+      console.log('📞 Call status update:', data);
       // Refresh live calls when call status changes
-      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+      refetch();
     };
 
     const handleCallStart = (data) => {
+      console.log('✅ Call started:', data);
       // Refresh live calls when new call starts
-      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+      refetch();
+      toast.success(`New AI call started to ${data.contactName || data.phoneNumber}`);
     };
 
     const handleCallEnd = (data) => {
+      console.log('📴 Call ended:', data);
       // Refresh live calls when call ends
-      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+      refetch();
+
+      // If the selected call ended, update conversation one last time
+      if (selectedCall?.id === data.callId) {
+        queryClient.invalidateQueries({ queryKey: ['conversation', data.callId] });
+      }
     };
 
+    const handleConversationTurn = (data) => {
+      console.log('💬 Conversation turn:', data);
+
+      // If this is for the selected call, update conversation in real-time
+      if (selectedCall?.id === data.callId) {
+        setConversationHistory(prev => {
+          const newHistory = [...prev];
+
+          // Add customer message if present
+          if (data.userInput) {
+            newHistory.push({
+              type: 'user',
+              message: data.userInput,
+              content: data.userInput,
+              timestamp: data.timestamp,
+              turn: data.turn,
+              emotion: data.emotion
+            });
+          }
+
+          // Add AI response if present
+          if (data.aiResponse) {
+            newHistory.push({
+              type: 'ai',
+              message: data.aiResponse,
+              content: data.aiResponse,
+              timestamp: data.timestamp,
+              turn: data.turn,
+              confidence: data.confidence,
+              emotion: data.emotion,
+              intent: data.intent
+            });
+          }
+
+          return newHistory;
+        });
+      }
+
+      // Always refresh live calls to update conversation preview
+      refetch();
+    };
+
+    // Subscribe to organization updates
     addListener('call_status_update', handleCallUpdate);
     addListener('call_started', handleCallStart);
     addListener('call_ended', handleCallEnd);
+    addListener('conversation_turn', handleConversationTurn);
+
+    // Subscribe to organization WebSocket channel
+    if (user?.organizationId) {
+      const ws = require('../services/websocket').default;
+      ws.subscribeToOrganizationUpdates(user.organizationId);
+    }
 
     return () => {
       // Cleanup listeners when component unmounts
     };
-  }, [isConnected, user?.organizationId, addListener, queryClient]);
+  }, [isConnected, user?.organizationId, addListener, queryClient, selectedCall, refetch]);
 
   // Load conversation history when call is selected
   useEffect(() => {

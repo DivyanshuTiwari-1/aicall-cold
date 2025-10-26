@@ -42,7 +42,7 @@ const Contacts = () => {
 
   // Fetch contacts
   const { data: contactsData, isLoading, error } = useQuery({
-    queryKey: ['contacts'],
+    queryKey: ['contacts', filters],
     queryFn: () => contactsAPI.getContacts(filters),
     refetchInterval: 30000,
   });

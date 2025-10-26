@@ -47,8 +47,8 @@ class AiDialerStasisApp {
                 status: 'active'
             });
 
-            // Answer the channel
-            await this.ari.channels.answer({ channelId: channel.id });
+            // Don't answer here - let AGI handle it after entering dialplan
+            // This prevents double-answer issues
 
             // Log call start to database
             await this.logCallEvent(callId, 'ai_call_started', {
@@ -58,6 +58,7 @@ class AiDialerStasisApp {
             });
 
             // Start the AGI script for AI conversation
+            // The AGI handler will answer the call
             await this.startAiConversation(channel.id, callId, phoneNumber, campaignId);
 
         } catch (error) {
@@ -87,14 +88,41 @@ class AiDialerStasisApp {
                 value: campaignId || 'unknown'
             });
 
-            // Execute the AGI script directly with proper arguments
-            // The AGI script path should be relative to Asterisk's AGI directory
-            const agiScript = 'ai-dialer-agi-simple.php';
+            // Update call status to in_progress
+            try {
+                const { query } = require('../../config/database');
+                await query(`
+                    UPDATE calls
+                    SET status = 'in_progress',
+                        channel_id = $1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $2
+                `, [channelId, callId]);
+
+                // Broadcast status update
+                const WebSocketBroadcaster = require('../websocket-broadcaster');
+                const callData = await query('SELECT organization_id FROM calls WHERE id = $1', [callId]);
+                if (callData.rows[0]) {
+                    WebSocketBroadcaster.broadcastCallStatusUpdate(
+                        callData.rows[0].organization_id,
+                        callId,
+                        'in_progress',
+                        { channelId }
+                    );
+                }
+            } catch (dbError) {
+                logger.error('Error updating call status:', dbError);
+            }
+
+            // Use Node.js FastAGI instead of PHP
+            // The AGI server will be contacted via agi:// URL in dialplan
+            const agiHost = process.env.AGI_HOST || 'localhost';
+            const agiPort = process.env.AGI_PORT || '4573';
             const agiArgs = `${callId},${phoneNumber},${campaignId || 'unknown'}`;
 
-            logger.info(`Executing AGI: ${agiScript} with args: ${agiArgs}`);
+            logger.info(`Routing to Node.js FastAGI: agi://${agiHost}:${agiPort} with args: ${agiArgs}`);
 
-            // Continue to dialplan context that will execute AGI
+            // Continue to dialplan context that will execute FastAGI
             await this.ari.channels.continueInDialplan({
                 channelId: channelId,
                 context: 'ai-dialer-stasis',
@@ -102,7 +130,7 @@ class AiDialerStasisApp {
                 priority: 1
             });
 
-            logger.info(`AGI script started for call ${callId}`);
+            logger.info(`Node.js AGI handler will be invoked for call ${callId}`);
 
         } catch (error) {
             logger.error(`Failed to start AGI script for call ${callId}:`, error);
@@ -183,6 +211,28 @@ class AiDialerStasisApp {
                 outcome: outcome,
                 channelId: channel.id
             });
+
+            // Broadcast call ended via WebSocket
+            try {
+                const { query } = require('../../config/database');
+                const WebSocketBroadcaster = require('../websocket-broadcaster');
+                const callData = await query('SELECT organization_id FROM calls WHERE id = $1', [callInfo.callId]);
+
+                if (callData.rows[0]) {
+                    WebSocketBroadcaster.broadcastCallEnded(
+                        callData.rows[0].organization_id,
+                        callInfo.callId,
+                        {
+                            status: 'completed',
+                            outcome: outcome,
+                            duration: durationSeconds,
+                            cost: callCost
+                        }
+                    );
+                }
+            } catch (broadcastError) {
+                logger.error('Error broadcasting call ended:', broadcastError);
+            }
 
             // Clean up
             this.activeCalls.delete(channel.id);

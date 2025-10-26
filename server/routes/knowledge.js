@@ -18,8 +18,85 @@ const querySchema = Joi.object({
     question: Joi.string().min(5).max(500).required()
 });
 
+// Get knowledge base categories (MUST be before parameterized routes)
+router.get('/categories', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const categoriesQuery = `
+            SELECT DISTINCT category, COUNT(*) as entry_count
+            FROM knowledge_entries
+            WHERE organization_id = $1
+            GROUP BY category
+            ORDER BY category
+        `;
+
+        const result = await query(categoriesQuery, [req.user.organizationId]);
+
+        res.json({
+            success: true,
+            categories: result.rows
+        });
+    } catch (error) {
+        logger.error('Error fetching knowledge categories:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch knowledge categories'
+        });
+    }
+});
+
+// Get knowledge base entries (MUST be before parameterized routes)
+router.get('/entries', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const { search = '', category = '', limit = 50, offset = 0 } = req.query;
+
+        let whereClause = 'WHERE organization_id = $1';
+        let params = [req.user.organizationId];
+        let paramCount = 1;
+
+        if (search) {
+            paramCount++;
+            whereClause += ` AND (question ILIKE $${paramCount} OR answer ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
+        }
+
+        if (category) {
+            paramCount++;
+            whereClause += ` AND category = $${paramCount}`;
+            params.push(category);
+        }
+
+        const entriesQuery = `
+            SELECT id, question, answer, category, confidence, created_at, updated_at
+            FROM knowledge_entries
+            ${whereClause}
+            ORDER BY created_at DESC
+            LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+        `;
+
+        params.push(parseInt(limit), parseInt(offset));
+
+        const result = await query(entriesQuery, params);
+
+        res.json({
+            success: true,
+            entries: result.rows,
+            pagination: {
+                limit: parseInt(limit),
+                offset: parseInt(offset),
+                total: result.rows.length
+            }
+        });
+    } catch (error) {
+        logger.error('Error fetching knowledge entries:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch knowledge entries'
+        });
+    }
+});
+
 // Query knowledge base
-router.post('/query', async(req, res) => {
+router.post('/query', authenticateToken, async(req, res) => {
     try {
         const { error, value } = querySchema.validate(req.body);
         if (error) {
@@ -116,7 +193,7 @@ router.post('/query', async(req, res) => {
 });
 
 // Add knowledge base entry
-router.post('/', async(req, res) => {
+router.post('/entries', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { error, value } = knowledgeSchema.validate(req.body);
         if (error) {
@@ -162,8 +239,53 @@ router.post('/', async(req, res) => {
     }
 });
 
-// Get knowledge base entries
-router.get('/', async(req, res) => {
+// Get single knowledge base entry by ID
+router.get('/entries/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        const result = await query(`
+            SELECT id, question, answer, category, confidence, is_active, created_at, updated_at, usage_count, last_used_at
+            FROM knowledge_entries
+            WHERE id = $1 AND organization_id = $2
+        `, [id, req.organizationId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Knowledge base entry not found'
+            });
+        }
+
+        const entry = result.rows[0];
+
+        res.json({
+            success: true,
+            entry: {
+                id: entry.id,
+                question: entry.question,
+                answer: entry.answer,
+                category: entry.category,
+                confidence: entry.confidence,
+                isActive: entry.is_active,
+                createdAt: entry.created_at,
+                updatedAt: entry.updated_at,
+                usageCount: entry.usage_count,
+                lastUsedAt: entry.last_used_at
+            }
+        });
+
+    } catch (error) {
+        logger.error('Knowledge entry fetch error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch knowledge base entry'
+        });
+    }
+});
+
+// Get knowledge base entries (list)
+router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { category, limit = 50, offset = 0, search } = req.query;
 
@@ -222,7 +344,7 @@ router.get('/', async(req, res) => {
 });
 
 // Update knowledge base entry
-router.put('/:id', async(req, res) => {
+router.put('/entries/:id', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { id } = req.params;
         const updateSchema = Joi.object({
@@ -312,7 +434,7 @@ router.put('/:id', async(req, res) => {
 });
 
 // Delete knowledge base entry
-router.delete('/:id', async(req, res) => {
+router.delete('/entries/:id', authenticateToken, requireRole('admin', 'manager'), async(req, res) => {
     try {
         const { id } = req.params;
 
@@ -339,83 +461,6 @@ router.delete('/:id', async(req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to delete knowledge base entry'
-        });
-    }
-});
-
-// Get knowledge base categories
-router.get('/categories', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
-    try {
-        const categoriesQuery = `
-            SELECT DISTINCT category, COUNT(*) as entry_count
-            FROM knowledge_entries
-            WHERE organization_id = $1
-            GROUP BY category
-            ORDER BY category
-        `;
-
-        const result = await query(categoriesQuery, [req.user.organizationId]);
-
-        res.json({
-            success: true,
-            categories: result.rows
-        });
-    } catch (error) {
-        logger.error('Error fetching knowledge categories:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch knowledge categories'
-        });
-    }
-});
-
-// Get knowledge base entries
-router.get('/entries', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
-    try {
-        const { search = '', category = '', limit = 50, offset = 0 } = req.query;
-
-        let whereClause = 'WHERE organization_id = $1';
-        let params = [req.user.organizationId];
-        let paramCount = 1;
-
-        if (search) {
-            paramCount++;
-            whereClause += ` AND (question ILIKE $${paramCount} OR answer ILIKE $${paramCount})`;
-            params.push(`%${search}%`);
-        }
-
-        if (category) {
-            paramCount++;
-            whereClause += ` AND category = $${paramCount}`;
-            params.push(category);
-        }
-
-        const entriesQuery = `
-            SELECT id, question, answer, category, confidence, created_at, updated_at
-            FROM knowledge_entries
-            ${whereClause}
-            ORDER BY created_at DESC
-            LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-        `;
-
-        params.push(parseInt(limit), parseInt(offset));
-
-        const result = await query(entriesQuery, params);
-
-        res.json({
-            success: true,
-            entries: result.rows,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                total: result.rows.length
-            }
-        });
-    } catch (error) {
-        logger.error('Error fetching knowledge entries:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch knowledge entries'
         });
     }
 });
