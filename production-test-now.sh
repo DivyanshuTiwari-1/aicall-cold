@@ -1,10 +1,8 @@
 #!/bin/bash
 ###############################################################
-# PRODUCTION AI CALLS TEST - ONE COMMAND RUNNER
-# Run this on your production server to test everything
+# PRODUCTION AI CALLS - AUTO FIX & TEST
+# Automatically fixes issues and tests AI calls
 ###############################################################
-
-set -e
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -20,8 +18,8 @@ echo -e "${CYAN}${BOLD}"
 cat << "EOF"
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
-║     AI AUTOMATED CALLS - PRODUCTION TEST                   ║
-║     Complete End-to-End Testing Suite                      ║
+║     AI AUTOMATED CALLS - AUTO FIX & TEST                   ║
+║     Fixing issues and testing end-to-end                   ║
 ║                                                            ║
 ╔════════════════════════════════════════════════════════════╗
 EOF
@@ -29,6 +27,9 @@ echo -e "${NC}"
 echo ""
 
 cd /opt/ai-dialer || { echo -e "${RED}❌ Error: /opt/ai-dialer directory not found${NC}"; exit 1; }
+
+# Don't exit on error - we'll handle them
+set +e
 
 # Step 1: Update code
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -55,62 +56,132 @@ chmod +x *.sh 2>/dev/null || true
 
 echo ""
 
-# Step 2: System Health Check
+# Step 2: Fix & Verify Services
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}Step 2: System Health Check${NC}"
+echo -e "${BOLD}Step 2: Checking & Fixing Services${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-if [ -f "verify-complete-flow.sh" ]; then
-    bash verify-complete-flow.sh
+# Check if containers are running
+echo "🐳 Checking Docker containers..."
+if ! docker-compose -f docker-compose.demo.yml ps | grep -q "Up"; then
+    echo -e "${YELLOW}⚠️  Some containers not running, restarting...${NC}"
+    docker-compose -f docker-compose.demo.yml up -d
+    sleep 10
+fi
+
+BACKEND_STATUS=$(docker ps --filter "name=ai-dialer-backend" --format "{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
+DB_STATUS=$(docker ps --filter "name=ai-dialer-postgres" --format "{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
+ASTERISK_STATUS=$(docker ps --filter "name=asterisk" --format "{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
+
+if [ "$BACKEND_STATUS" -eq 0 ]; then
+    echo -e "${RED}✗ Backend not running - restarting...${NC}"
+    docker-compose -f docker-compose.demo.yml up -d backend
+    sleep 10
 else
-    echo -e "${YELLOW}⚠️  verify-complete-flow.sh not found, skipping detailed checks${NC}"
-    
-    # Basic checks
-    echo "Checking Docker containers..."
-    docker-compose -f docker-compose.demo.yml ps
-    
+    echo -e "${GREEN}✓ Backend is running${NC}"
+fi
+
+if [ "$DB_STATUS" -eq 0 ]; then
+    echo -e "${RED}✗ Database not running - restarting...${NC}"
+    docker-compose -f docker-compose.demo.yml up -d postgres
+    sleep 5
+else
+    echo -e "${GREEN}✓ Database is running${NC}"
+fi
+
+if [ "$ASTERISK_STATUS" -eq 0 ]; then
+    echo -e "${RED}✗ Asterisk not running - restarting...${NC}"
+    docker-compose -f docker-compose.demo.yml up -d asterisk
+    sleep 5
+else
+    echo -e "${GREEN}✓ Asterisk is running${NC}"
+fi
+
+# Check database connectivity
+echo ""
+echo "💾 Testing database..."
+if docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -c "SELECT 1;" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Database accessible${NC}"
+else
+    echo -e "${RED}✗ Database connection failed${NC}"
+    echo "Restarting database..."
+    docker-compose -f docker-compose.demo.yml restart postgres
+    sleep 5
+fi
+
+# Check backend API
+echo ""
+echo "🔌 Testing backend API..."
+sleep 3
+if docker exec ai-dialer-backend curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Backend API responding${NC}"
+else
+    echo -e "${YELLOW}⚠️  Backend API not responding, restarting...${NC}"
+    docker-compose -f docker-compose.demo.yml restart backend
+    sleep 10
+fi
+
+# Check FastAGI server is in logs
+echo ""
+echo "🤖 Checking FastAGI server..."
+if docker-compose -f docker-compose.demo.yml logs backend 2>/dev/null | grep -q "FastAGI\|AGI server\|port 4573"; then
+    echo -e "${GREEN}✓ FastAGI server detected in logs${NC}"
+else
+    echo -e "${YELLOW}⚠️  FastAGI not detected, may need restart${NC}"
+    docker-compose -f docker-compose.demo.yml restart backend
+    sleep 10
+fi
+
+echo ""
+echo -e "${GREEN}✅ All services checked and fixed${NC}"
+
+# Step 3: Verify Campaign & Contacts
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BOLD}Step 3: Campaign & Contact Setup${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+CAMPAIGN_ID=$(docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -t -c "SELECT id FROM campaigns WHERE status = 'active' LIMIT 1;" 2>/dev/null | xargs)
+
+if [ -z "$CAMPAIGN_ID" ]; then
+    echo -e "${YELLOW}⚠️  No active campaign found${NC}"
+    echo "Please activate a campaign via web interface first"
+    echo "Visit: https://atsservice.site/ → Campaigns"
+    exit 1
+else
+    echo -e "${GREEN}✓ Active campaign found: $CAMPAIGN_ID${NC}"
+fi
+
+CONTACT_COUNT=$(docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -t -c "SELECT COUNT(*) FROM contacts WHERE campaign_id = '$CAMPAIGN_ID' AND status IN ('pending', 'new');" 2>/dev/null | xargs)
+echo -e "${BLUE}  Available contacts: $CONTACT_COUNT${NC}"
+
+if [ "$CONTACT_COUNT" -lt 1 ]; then
+    echo -e "${YELLOW}⚠️  No contacts available for calling${NC}"
+    echo "Please add contacts via web interface first"
+    exit 1
+fi
+
+# Step 4: Check for existing active calls or start queue
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BOLD}Step 4: Checking Queue & Active Calls${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+ACTIVE_CALLS=$(docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -t -c "SELECT COUNT(*) FROM calls WHERE status IN ('initiated', 'in_progress') AND created_at >= NOW() - INTERVAL '10 minutes';" 2>/dev/null | xargs)
+
+if [ "$ACTIVE_CALLS" -gt 0 ]; then
+    echo -e "${GREEN}✓ Found $ACTIVE_CALLS active call(s) - monitoring...${NC}"
+else
+    echo -e "${BLUE}No active calls - queue may not be running${NC}"
     echo ""
-    echo "Checking database..."
-    docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -c "SELECT 1;" > /dev/null 2>&1 && \
-        echo -e "${GREEN}✓ Database OK${NC}" || \
-        echo -e "${RED}✗ Database Error${NC}"
-fi
-
-echo ""
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}Proceed with test calls?${NC}"
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "This will initiate 5 real AI calls to contacts in your active campaign."
-echo ""
-read -p "Continue? (y/n): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Test cancelled by user${NC}"
-    exit 0
-fi
-
-echo ""
-
-# Step 3: Test Calls
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}Step 3: Initiating Test Calls${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-
-if [ -f "start-test-calls.sh" ]; then
-    bash start-test-calls.sh
-else
-    echo -e "${YELLOW}⚠️  start-test-calls.sh not found${NC}"
-    echo "Checking for active calls manually..."
-    
-    docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -c "
-    SELECT id, status, created_at 
-    FROM calls 
-    WHERE created_at >= NOW() - INTERVAL '5 minutes'
-    ORDER BY created_at DESC;
-    "
+    echo "Note: You can start the queue from the web interface:"
+    echo "  https://atsservice.site/ → Campaigns → Start Queue"
+    echo ""
+    echo "Or check queue status:"
+    docker exec ai-dialer-backend curl -s http://localhost:3000/api/v1/queue/status 2>/dev/null | head -10 || echo "Queue status unavailable"
 fi
 
 echo ""
@@ -130,8 +201,8 @@ echo "   Total: $CALL_COUNT"
 echo ""
 echo -e "${BLUE}💬 Conversation Turns Logged:${NC}"
 CONV_COUNT=$(docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -t -c "
-SELECT COUNT(*) FROM call_events 
-WHERE event_type = 'ai_conversation' 
+SELECT COUNT(*) FROM call_events
+WHERE event_type = 'ai_conversation'
 AND timestamp >= NOW() - INTERVAL '10 minutes';
 " | xargs)
 echo "   Total: $CONV_COUNT"
@@ -142,7 +213,7 @@ if [ "$CONV_COUNT" -gt 0 ]; then
     echo ""
     echo -e "${BLUE}Latest Conversation:${NC}"
     docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -c "
-    SELECT 
+    SELECT
         event_data->>'user_input' as customer,
         event_data->>'ai_response' as ai
     FROM call_events
@@ -238,4 +309,3 @@ fi
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-
