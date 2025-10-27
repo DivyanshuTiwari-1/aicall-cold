@@ -363,7 +363,7 @@ router.get('/productivity', authenticateToken, requireRole('manager', 'admin'), 
 });
 
 // Get live call monitoring data
-router.get('/live-calls', authenticateToken, requireRole('manager', 'admin'), async(req, res) => {
+router.get('/live-calls', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
         const { organizationId } = req.user;
 
