@@ -76,7 +76,7 @@ const LiveMonitor = () => {
       console.log('✅ Call started:', data);
       // Refresh live calls when new call starts
       refetch();
-      toast.success(`New AI call started to ${data.contactName || data.phoneNumber}`);
+      toast.success(`New AI call started to ${data.contactName || data.phoneNumber || 'contact'}`);
     };
 
     const handleCallEnd = (data) => {
@@ -85,8 +85,9 @@ const LiveMonitor = () => {
       refetch();
 
       // If the selected call ended, update conversation one last time
-      if (selectedCall?.id === data.callId) {
-        queryClient.invalidateQueries({ queryKey: ['conversation', data.callId] });
+      const endedCallId = data.callId || data.call_id;
+      if (selectedCall?.id === endedCallId) {
+        queryClient.invalidateQueries({ queryKey: ['conversation', endedCallId] });
       }
     };
 
@@ -94,29 +95,29 @@ const LiveMonitor = () => {
       console.log('💬 Conversation turn:', data);
 
       // If this is for the selected call, update conversation in real-time
-      if (selectedCall?.id === data.callId) {
+      if (selectedCall?.id === data.callId || selectedCall?.id === data.call_id) {
         setConversationHistory(prev => {
           const newHistory = [...prev];
 
           // Add customer message if present
-          if (data.userInput) {
+          if (data.userInput || data.user_input) {
             newHistory.push({
               type: 'user',
-              message: data.userInput,
-              content: data.userInput,
-              timestamp: data.timestamp,
+              message: data.userInput || data.user_input,
+              content: data.userInput || data.user_input,
+              timestamp: data.timestamp || new Date().toISOString(),
               turn: data.turn,
               emotion: data.emotion
             });
           }
 
           // Add AI response if present
-          if (data.aiResponse) {
+          if (data.aiResponse || data.ai_response) {
             newHistory.push({
               type: 'ai',
-              message: data.aiResponse,
-              content: data.aiResponse,
-              timestamp: data.timestamp,
+              message: data.aiResponse || data.ai_response,
+              content: data.aiResponse || data.ai_response,
+              timestamp: data.timestamp || new Date().toISOString(),
               turn: data.turn,
               confidence: data.confidence,
               emotion: data.emotion,

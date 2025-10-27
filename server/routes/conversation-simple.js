@@ -149,17 +149,29 @@ router.post('/simple-process', async (req, res) => {
         }
 
         // Log AI response (update the conversation event with AI response)
-        await query(`
-            INSERT INTO call_events (call_id, event_type, event_data)
-            VALUES ($1, 'ai_conversation', $2)
-        `, [call_id, JSON.stringify({
+        const conversationEventData = {
             turn,
             user_input,
             ai_response,
             intent: analysis.intent,
             action,
             timestamp: new Date().toISOString()
-        })]);
+        };
+
+        await query(`
+            INSERT INTO call_events (call_id, event_type, event_data)
+            VALUES ($1, 'ai_conversation', $2)
+        `, [call_id, JSON.stringify(conversationEventData)]);
+
+        // Broadcast conversation turn via WebSocket
+        const WebSocketBroadcaster = require('../services/websocket-broadcaster');
+        if (call.organization_id) {
+            WebSocketBroadcaster.broadcastConversationTurn(
+                call.organization_id,
+                call_id,
+                conversationEventData
+            );
+        }
 
         res.json({
             success: true,
