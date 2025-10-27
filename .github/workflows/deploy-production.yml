@@ -78,23 +78,23 @@ jobs:
               echo "   At least 2GB free space is required for deployment"
               echo ""
               echo "🧹 Running automatic cleanup..."
-              
+
               # Auto cleanup
               docker image prune -af
               docker container prune -f
               docker system prune -f
-              
+
               # Check again
               DISK_AVAIL_AFTER=$(df / | tail -1 | awk '{print $4}')
               DISK_AVAIL_AFTER_GB=$((DISK_AVAIL_AFTER / 1024 / 1024))
               echo "   Available after cleanup: ${DISK_AVAIL_AFTER_GB}GB"
-              
+
               if [ "$DISK_AVAIL_AFTER_GB" -lt 2 ]; then
                 echo "❌ Still not enough space. Manual intervention required."
                 echo "   SSH to server and run: bash cleanup-production-disk.sh"
                 exit 1
               fi
-              
+
               echo "✅ Enough space freed, continuing deployment..."
             else
               echo "✅ Sufficient disk space available"

@@ -224,4 +224,3 @@ Once deployment succeeds:
 3. Start queue
 4. Watch LiveMonitor → Active Calls
 5. See conversation in real-time!
-

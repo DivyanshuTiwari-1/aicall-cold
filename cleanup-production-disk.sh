@@ -118,4 +118,3 @@ echo "   1. Removing old application backups"
 echo "   2. Running: docker system prune -af --volumes (removes ALL unused data)"
 echo "   3. Expanding disk size on your cloud provider"
 echo ""
-

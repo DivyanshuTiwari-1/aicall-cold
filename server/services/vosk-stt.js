@@ -95,9 +95,3 @@ class VoskSTTService {
 }
 
 module.exports = new VoskSTTService();
-
-
-
-
-
-

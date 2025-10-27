@@ -166,13 +166,13 @@ class AutomatedCallQueue {
                 JOIN campaigns c ON ct.campaign_id = c.id
                 LEFT JOIN dnc_registry dnc ON ct.phone = dnc.phone AND ct.organization_id = dnc.organization_id
                 WHERE ct.campaign_id = $1
-                AND ct.status IN ('pending', 'retry', 'new')
+                AND ct.status IN ('pending', 'new')
                 AND (ct.last_contacted IS NULL OR ct.last_contacted < NOW() - INTERVAL '1 hour')
                 AND ct.retry_count < $2
                 AND dnc.id IS NULL
                 ORDER BY
-                    CASE WHEN ct.status = 'retry' THEN 1 ELSE 2 END,
                     ct.priority DESC,
+                    ct.retry_count ASC,
                     ct.created_at ASC
                 LIMIT 1
             `, [campaignId, this.retryAttempts]);
@@ -212,8 +212,9 @@ class AutomatedCallQueue {
                 throw new Error('Contact is on Do Not Call list');
             }
 
-            // Generate unique call ID
-            const callId = `auto_${Date.now()}_${contact.id}`;
+            // Generate unique call ID - must be valid UUID
+            const { v4: uuidv4 } = require('uuid');
+            const callId = uuidv4();
 
             // Create call record BEFORE initiating to ensure it exists in database
             const callResult = await query(`
@@ -310,7 +311,7 @@ class AutomatedCallQueue {
                 UPDATE contacts
                 SET retry_count = retry_count + 1,
                     last_contacted = CURRENT_TIMESTAMP,
-                    status = CASE WHEN retry_count + 1 >= $1 THEN 'failed' ELSE 'retry' END
+                    status = CASE WHEN retry_count + 1 >= $1 THEN 'failed' ELSE 'pending' END
                 WHERE id = $2
             `, [this.retryAttempts, contact.id]);
 

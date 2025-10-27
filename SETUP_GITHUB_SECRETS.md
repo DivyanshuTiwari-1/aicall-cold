@@ -54,4 +54,3 @@ After adding secrets:
 3. Click "Re-run jobs" → "Re-run failed jobs"
 
 The deployment should now work!
-

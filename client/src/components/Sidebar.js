@@ -54,7 +54,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
   // New navigation structure for admin/manager
   const fullNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, roles: ['admin', 'manager', 'data_uploader'] },
-    { name: 'Leads', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
+    { name: 'Leads', href: '/lead-assignment', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
     {
       name: 'Automated Calls',
       icon: MegaphoneIcon,
@@ -63,6 +63,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       dropdownKey: 'automatedCalls',
       children: [
         { name: 'Campaigns', href: '/campaigns', icon: MegaphoneIcon, roles: ['admin', 'manager'] },
+        { name: 'Contact Management', href: '/contacts', icon: UsersIcon, roles: ['admin', 'manager', 'data_uploader'] },
         { name: 'Live Monitoring', href: '/live-monitor', icon: EyeIcon, roles: ['admin', 'manager'] },
         { name: 'Scripts', href: '/scripts', icon: DocumentTextIcon, roles: ['admin', 'manager'] },
         { name: 'Knowledge Base', href: '/knowledge-base', icon: BookOpenIcon, roles: ['admin', 'manager'] },
