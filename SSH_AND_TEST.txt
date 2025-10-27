@@ -1,0 +1,112 @@
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║     PRODUCTION AI CALLS - COPY & PASTE THESE COMMANDS      ║
+║                                                            ║
+╔════════════════════════════════════════════════════════════╗
+
+
+1️⃣ SSH TO YOUR SERVER:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Copy and run this in your terminal/PuTTY:
+
+ssh ubuntu@13.53.89.241
+
+(Or use your VPS dashboard web console)
+
+
+2️⃣ RUN ONE COMMAND TO TEST EVERYTHING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Once connected, copy and paste this ENTIRE command:
+
+cd /opt/ai-dialer && git pull origin main && chmod +x *.sh && bash production-test-now.sh
+
+
+That's it! This will:
+  ✅ Pull latest code
+  ✅ Check system health
+  ✅ Start 5 test AI calls
+  ✅ Monitor conversations in real-time
+  ✅ Show you the results
+
+
+3️⃣ WHAT YOU'LL SEE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The script will:
+  1. Update code from GitHub
+  2. Check all Docker containers
+  3. Verify FastAGI server running
+  4. Check database connectivity
+  5. Ask if you want to start test calls
+  6. Initiate 5 AI calls
+  7. Show real-time conversations
+  8. Display final results
+
+
+4️⃣ AFTER TEST - MONITOR LIVE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+To see live dashboard (optional):
+
+bash monitor-live-calls.sh
+
+(Press Ctrl+C to exit)
+
+
+5️⃣ CHECK WEB INTERFACE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Open in browser:
+
+https://atsservice.site/
+
+Go to: Live Monitoring → Active Calls
+
+You should see:
+  ✅ Active calls updating in real-time
+  ✅ Conversation turns appearing live
+  ✅ Green "Connected" WebSocket status
+
+
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║     ✅ YOUR AI CALL SYSTEM WILL BE WORKING IN 5 MINUTES    ║
+║                                                            ║
+╔════════════════════════════════════════════════════════════╗
+
+
+TROUBLESHOOTING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If something fails:
+
+  1. Check Docker:
+     docker-compose -f docker-compose.demo.yml ps
+
+  2. Restart backend:
+     docker-compose -f docker-compose.demo.yml restart backend
+
+  3. Check logs:
+     docker-compose -f docker-compose.demo.yml logs --tail=50 backend
+
+  4. Check database:
+     docker exec ai-dialer-postgres psql -U postgres -d ai_dialer -c "SELECT COUNT(*) FROM calls;"
+
+
+NEED HELP?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All scripts are now on your server at: /opt/ai-dialer/
+
+  • verify-complete-flow.sh    - Complete system verification
+  • start-test-calls.sh         - Start 5 test calls
+  • monitor-live-calls.sh       - Real-time dashboard
+  • production-test-now.sh      - All-in-one test (recommended)
+
+
+╔════════════════════════════════════════════════════════════╗
+║                    🚀 READY TO TEST! 🚀                     ║
+╔════════════════════════════════════════════════════════════╗
+
