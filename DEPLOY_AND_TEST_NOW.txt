@@ -111,14 +111,14 @@ You should see:
 Check database (from SSH):
 
 docker-compose exec postgres psql -U postgres -d ai_dialer -c "
-  SELECT 
-    id, 
-    status, 
-    outcome, 
-    duration, 
+  SELECT
+    id,
+    status,
+    outcome,
+    duration,
     cost,
     to_char(created_at, 'HH24:MI:SS') as time
-  FROM calls 
+  FROM calls
   WHERE call_type = 'automated'
   AND created_at > NOW() - INTERVAL '10 minutes'
   ORDER BY created_at DESC;
@@ -175,7 +175,7 @@ TROUBLESHOOTING:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Problem: "No webhooks received"
-Solution: 
+Solution:
   • Check Telnyx webhook URL is set
   • Verify https://atsservice.site is accessible
   • Check: curl https://atsservice.site/api/v1/webhooks/telnyx
@@ -281,4 +281,3 @@ Webhook URL: https://atsservice.site/api/v1/webhooks/telnyx
 ╔════════════════════════════════════════════════════════════╗
 ║                    🚀 LET'S GO! 🚀                          ║
 ╔════════════════════════════════════════════════════════════╝
-
