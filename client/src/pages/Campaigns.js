@@ -21,7 +21,7 @@ import phoneNumbersAPI from '../services/phoneNumbers';
 const Campaigns = () => {
     const queryClient = useQueryClient();
     const { user } = useAuth();
-    const { isConnected, addListener } = useWebSocket();
+    const { isConnected, addListener, subscribeToOrganization } = useWebSocket();
     const [queueStatuses, setQueueStatuses] = React.useState({});
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showPhoneSelector, setShowPhoneSelector] = useState(false);
@@ -79,6 +79,10 @@ const Campaigns = () => {
     useEffect(() => {
         if (!isConnected || !user?.organizationId) return;
 
+        // Subscribe to organization channel for real-time updates
+        subscribeToOrganization(user.organizationId);
+        console.log('✅ [CAMPAIGNS] Subscribed to organization:', user.organizationId);
+
         const handleQueueStatusUpdate = (data) => {
             console.log('📊 [CAMPAIGNS] Queue status update:', data);
 
@@ -110,7 +114,7 @@ const Campaigns = () => {
         return () => {
             // Cleanup handled by useWebSocket
         };
-    }, [isConnected, user?.organizationId, addListener, queryClient]);
+    }, [isConnected, user?.organizationId, addListener, queryClient, subscribeToOrganization]);
 
     // Fetch initial queue statuses for active campaigns on mount
     useEffect(() => {

@@ -18,7 +18,7 @@ import { callsAPI } from '../services/calls';
 const Calls = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { addListener, isConnected } = useWebSocket();
+  const { addListener, isConnected, subscribeToOrganization } = useWebSocket();
   const isAgent = user?.role === 'agent';
   const [filters, setFilters] = useState({
     search: '',
@@ -47,6 +47,10 @@ const Calls = () => {
   useEffect(() => {
     if (!isConnected || !user?.organizationId) return;
 
+    // Subscribe to organization channel for real-time updates
+    subscribeToOrganization(user.organizationId);
+    console.log('✅ [CALLS] Subscribed to organization:', user.organizationId);
+
     const handleCallUpdate = (data) => {
       // Refresh calls when status changes
       queryClient.invalidateQueries({ queryKey: ['calls'] });
@@ -59,7 +63,7 @@ const Calls = () => {
     return () => {
       // Cleanup listeners when component unmounts
     };
-  }, [isConnected, user?.organizationId, addListener, queryClient]);
+  }, [isConnected, user?.organizationId, addListener, queryClient, subscribeToOrganization]);
 
   const handleViewDetails = (call) => {
     setSelectedCall(call);

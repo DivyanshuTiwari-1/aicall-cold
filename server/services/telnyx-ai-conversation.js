@@ -301,6 +301,10 @@ class TelnyxAIConversation {
             const durationMinutes = duration / 60;
             const cost = durationMinutes * 0.011; // Telnyx rate
 
+            // Extract emotion and intent from last turn
+            const emotion = lastTurn?.emotion || 'neutral';
+            const intentScore = lastTurn?.confidence ? parseFloat(lastTurn.confidence) : 0.5;
+
             // Update call record
             await query(`
                 UPDATE calls
@@ -310,9 +314,13 @@ class TelnyxAIConversation {
                     transcript = $2,
                     duration = $3,
                     cost = $4,
+                    emotion = $5,
+                    intent_score = $6,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = $5
-            `, [outcome, transcript, duration, cost, callId]);
+                WHERE id = $7
+            `, [outcome, transcript, duration, cost, emotion, intentScore, callId]);
+
+            logger.info(`✅ [CALL-END] ${callId}: Outcome=${outcome}, Emotion=${emotion}, Duration=${duration}s, Cost=$${cost.toFixed(4)}`);
 
             // Update contact status
             await query(`
@@ -334,6 +342,8 @@ class TelnyxAIConversation {
                 outcome,
                 duration,
                 cost,
+                emotion,
+                intent_score: intentScore,
                 timestamp: new Date().toISOString()
             });
 

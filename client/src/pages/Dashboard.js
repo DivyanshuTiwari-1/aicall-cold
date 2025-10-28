@@ -19,7 +19,7 @@ import { usersAPI } from '../services/users';
 const Dashboard = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { addListener, isConnected } = useWebSocket();
+  const { addListener, isConnected, subscribeToOrganization } = useWebSocket();
   const [dateRange, setDateRange] = useState('7d');
   const [activeTab, setActiveTab] = useState('executive');
 
@@ -58,7 +58,9 @@ const Dashboard = () => {
   useEffect(() => {
     if (!isConnected || !user?.organizationId) return;
 
-    console.log('✅ [DASHBOARD] WebSocket connected, setting up listeners');
+    // Subscribe to organization channel for real-time updates
+    subscribeToOrganization(user.organizationId);
+    console.log('✅ [DASHBOARD] WebSocket connected, subscribed to organization:', user.organizationId);
 
     const handleCallUpdate = (data) => {
       console.log('📞 [DASHBOARD] Call update received:', data);
@@ -117,7 +119,7 @@ const Dashboard = () => {
       console.log('🔴 [DASHBOARD] Cleaning up WebSocket listeners');
       // Cleanup listeners when component unmounts
     };
-  }, [isConnected, user?.organizationId, addListener, queryClient]);
+  }, [isConnected, user?.organizationId, addListener, queryClient, subscribeToOrganization]);
 
   if (isLoading || productivityLoading || usersLoading) return <LoadingSpinner />;
   if (error)

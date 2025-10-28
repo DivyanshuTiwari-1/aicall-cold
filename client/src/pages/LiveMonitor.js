@@ -22,7 +22,7 @@ import { conversationAPI } from '../services/conversation';
 const LiveMonitor = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { addListener, isConnected } = useWebSocket();
+  const { addListener, isConnected, subscribeToOrganization } = useWebSocket();
   const [selectedCall, setSelectedCall] = useState(null);
   const [conversationHistory, setConversationHistory] = useState([]);
   const [isMonitoring, setIsMonitoring] = useState(true);
@@ -66,6 +66,10 @@ const LiveMonitor = () => {
   // Set up WebSocket listeners for real-time updates
   useEffect(() => {
     if (!isConnected || !user?.organizationId) return;
+
+    // Subscribe to organization channel for real-time updates
+    subscribeToOrganization(user.organizationId);
+    console.log(`✅ [LIVE MONITOR] Subscribed to organization: ${user.organizationId}`);
 
     const handleCallUpdate = (data) => {
       console.log('📞 Call status update:', data);
@@ -185,17 +189,10 @@ const LiveMonitor = () => {
     addListener('conversation_turn', handleConversationTurn);
     addListener('queue_status_update', handleQueueStatusUpdate);
 
-    // Subscribe to organization WebSocket channel
-    if (user?.organizationId) {
-      const ws = require('../services/websocket').default;
-      ws.subscribeToOrganizationUpdates(user.organizationId);
-      console.log('✅ [LIVE-MONITOR] Subscribed to organization updates:', user.organizationId);
-    }
-
     return () => {
       // Cleanup listeners when component unmounts
     };
-  }, [isConnected, user?.organizationId, addListener, queryClient, selectedCall, refetch]);
+  }, [isConnected, user?.organizationId, addListener, queryClient, selectedCall, refetch, subscribeToOrganization]);
 
   // Load conversation history when call is selected
   useEffect(() => {
