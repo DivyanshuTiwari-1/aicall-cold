@@ -68,6 +68,27 @@ const LiveMonitor = () => {
 
     const handleCallUpdate = (data) => {
       console.log('📞 Call status update:', data);
+      
+      // Show detailed status notifications
+      if (data.status === 'ringing') {
+        toast(`☎️ ${data.message || 'Call is ringing...'}`, { 
+          duration: 2000,
+          icon: '☎️'
+        });
+      } else if (data.status === 'connected') {
+        toast.success(`✅ ${data.message || 'Customer answered!'}`);
+      } else if (data.phase === 'listening') {
+        toast.info(`👂 ${data.message || 'AI listening to customer...'}`, { 
+          duration: 2000,
+          icon: '👂'
+        });
+      } else if (data.phase === 'processing') {
+        toast.info(`🤔 ${data.message || 'AI processing response...'}`, { 
+          duration: 2000,
+          icon: '🤔'
+        });
+      }
+      
       // Refresh live calls when call status changes
       refetch();
     };
@@ -76,13 +97,30 @@ const LiveMonitor = () => {
       console.log('✅ Call started:', data);
       // Refresh live calls when new call starts
       refetch();
-      toast.success(`New AI call started to ${data.contactName || data.phoneNumber || 'contact'}`);
+      const contactName = data.contactName || `${data.phoneNumber || 'contact'}`;
+      toast.success(`📞 New AI call started to ${contactName}`, {
+        duration: 3000,
+        icon: '🤖'
+      });
     };
 
     const handleCallEnd = (data) => {
       console.log('📴 Call ended:', data);
       // Refresh live calls when call ends
       refetch();
+
+      // Show outcome notification
+      const outcome = data.outcome || 'completed';
+      const outcomeMessages = {
+        'scheduled': '📅 Meeting scheduled!',
+        'interested': '😊 Customer interested!',
+        'completed': '✓ Call completed',
+        'not_interested': '😕 Customer not interested',
+        'dnc_request': '🚫 DNC requested'
+      };
+      toast(outcomeMessages[outcome] || 'Call ended', {
+        duration: 3000
+      });
 
       // If the selected call ended, update conversation one last time
       const endedCallId = data.callId || data.call_id;
@@ -255,6 +293,56 @@ const LiveMonitor = () => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const getCallStatusBadge = (status, phase) => {
+    const statusConfig = {
+      'initiated': { 
+        color: 'bg-blue-100 text-blue-800', 
+        icon: '📞', 
+        label: 'Dialing',
+        pulse: true 
+      },
+      'ringing': { 
+        color: 'bg-yellow-100 text-yellow-800', 
+        icon: '☎️', 
+        label: 'Ringing',
+        pulse: true 
+      },
+      'connected': { 
+        color: 'bg-green-100 text-green-800', 
+        icon: '✅', 
+        label: 'Connected',
+        pulse: false 
+      },
+      'in_progress': { 
+        color: 'bg-purple-100 text-purple-800', 
+        icon: phase === 'listening' ? '👂' : phase === 'processing' ? '🤔' : '💬', 
+        label: phase === 'listening' ? 'Listening' : phase === 'processing' ? 'Processing' : 'Talking',
+        pulse: phase === 'processing' 
+      },
+      'completed': { 
+        color: 'bg-gray-100 text-gray-800', 
+        icon: '✓', 
+        label: 'Completed',
+        pulse: false 
+      },
+      'failed': { 
+        color: 'bg-red-100 text-red-800', 
+        icon: '❌', 
+        label: 'Failed',
+        pulse: false 
+      },
+    };
+
+    const config = statusConfig[status] || statusConfig['initiated'];
+    
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color}`}>
+        <span className={`mr-1 ${config.pulse ? 'animate-pulse' : ''}`}>{config.icon}</span>
+        {config.label}
+      </span>
+    );
   };
 
   const liveCalls = liveCallsData?.liveCalls || [];
@@ -442,11 +530,8 @@ const LiveMonitor = () => {
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        call.status === 'in_progress' ? 'bg-green-100 text-green-800' :
-                        call.status === 'initiated' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+                      {getCallStatusBadge(call.status, call.phase)}
+                      <div className={`px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hidden`}>
                         {call.status}
                       </div>
                       {call.emotion && (

@@ -403,27 +403,79 @@ router.post('/telnyx', async (req, res) => {
         // Import conversation orchestrator
         const telnyxAIConversation = require('../services/telnyx-ai-conversation');
 
+        // Import WebSocket broadcaster
+        const WebSocketBroadcaster = require('../services/websocket-broadcaster');
+        const { query } = require('../config/database');
+
         // Handle different event types
         switch (eventType) {
             case 'call.initiated':
                 logger.info(`Call initiated: ${callControlId}`);
-                // Call is dialing, no action needed
+                // Update status to ringing and broadcast
+                if (metadata.callId && metadata.organizationId) {
+                    await query(`
+                        UPDATE calls 
+                        SET status = 'ringing', updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = $1
+                    `, [metadata.callId]);
+                    
+                    WebSocketBroadcaster.broadcastCallStatusUpdate(
+                        metadata.organizationId,
+                        metadata.callId,
+                        'ringing',
+                        { callControlId, message: 'Call is ringing...' }
+                    );
+                }
                 break;
 
             case 'call.answered':
                 logger.info(`Call answered: ${callControlId}`);
+                // Update status to connected and broadcast
+                if (metadata.callId && metadata.organizationId) {
+                    await query(`
+                        UPDATE calls 
+                        SET status = 'connected', updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = $1
+                    `, [metadata.callId]);
+                    
+                    WebSocketBroadcaster.broadcastCallStatusUpdate(
+                        metadata.organizationId,
+                        metadata.callId,
+                        'connected',
+                        { callControlId, message: 'Customer answered!' }
+                    );
+                }
                 // Customer answered - start AI conversation
                 await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
                 break;
 
             case 'call.playback.ended':
                 logger.info(`Playback ended: ${callControlId}`);
+                // Broadcast: AI finished talking, listening for customer
+                if (metadata.callId && metadata.organizationId) {
+                    WebSocketBroadcaster.broadcastCallStatusUpdate(
+                        metadata.organizationId,
+                        metadata.callId,
+                        'in_progress',
+                        { callControlId, message: 'Listening to customer...', phase: 'listening' }
+                    );
+                }
                 // AI finished speaking - start recording customer
                 await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
                 break;
 
             case 'call.recording.saved':
                 logger.info(`Recording saved: ${callControlId}`);
+                // Broadcast: Customer finished talking, AI is processing
+                if (metadata.callId && metadata.organizationId) {
+                    WebSocketBroadcaster.broadcastCallStatusUpdate(
+                        metadata.organizationId,
+                        metadata.callId,
+                        'in_progress',
+                        { callControlId, message: 'AI processing response...', phase: 'processing' }
+                    );
+                }
+                
                 const recordingUrl = event.payload?.recording_urls?.wav || event.payload?.public_recording_url;
 
                 if (recordingUrl) {
