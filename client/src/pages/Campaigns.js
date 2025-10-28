@@ -1,15 +1,17 @@
 import {
-  ChartBarIcon,
-  ClockIcon,
-  PhoneIcon,
-  PlayIcon,
-  PlusIcon,
-  StopIcon,
-  UserGroupIcon
+    ChartBarIcon,
+    ClockIcon,
+    PhoneIcon,
+    PlayIcon,
+    PlusIcon,
+    StopIcon,
+    TrashIcon,
+    UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import ConfirmationModal from '../components/ConfirmationModal';
 import CreateCampaignModal from '../components/CreateCampaignModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,6 +28,8 @@ const Campaigns = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showPhoneSelector, setShowPhoneSelector] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [campaignToDelete, setCampaignToDelete] = useState(null);
 
     // Fetch campaigns
     const { data: campaignsData, isLoading: campaignsLoading } = useQuery({
@@ -72,6 +76,21 @@ const Campaigns = () => {
         },
         onError: (error) => {
             toast.error(error.response?.data?.message || 'Failed to stop automated calls');
+        },
+    });
+
+    // Delete campaign mutation
+    const deleteCampaignMutation = useMutation({
+        mutationFn: (campaignId) => campaignsAPI.deleteCampaign(campaignId),
+        onSuccess: () => {
+            toast.success('Campaign deleted successfully');
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+            setShowDeleteConfirm(false);
+            setCampaignToDelete(null);
+        },
+        onError: (error) => {
+            toast.error(error.response?.data?.message || 'Failed to delete campaign');
         },
     });
 
@@ -369,7 +388,7 @@ const Campaigns = () => {
                                                         {campaign.callsMade || 0}
                                                     </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <div className="flex flex-col space-y-1">
+                                                <div className="flex flex-col space-y-2">
                                                     <div className="flex space-x-2">
                                                         {campaign.automatedCallsActive ? (
                                                             <button
@@ -398,6 +417,17 @@ const Campaigns = () => {
                                                                 Start Queue
                                                             </button>
                                                         )}
+                                                        <button
+                                                            onClick={() => {
+                                                                setCampaignToDelete(campaign);
+                                                                setShowDeleteConfirm(true);
+                                                            }}
+                                                            disabled={campaign.automatedCallsActive || deleteCampaignMutation.isLoading}
+                                                            className="inline-flex items-center px-3 py-2 border border-red-300 text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                                            title={campaign.automatedCallsActive ? "Stop queue before deleting" : "Delete campaign"}
+                                                        >
+                                                            <TrashIcon className="h-4 w-4" />
+                                                        </button>
                                                     </div>
                                                     {!campaign.automatedCallsActive && (campaign.status !== 'active' || campaign.contactCount === 0) && (
                                                         <p className="text-xs text-gray-500">
@@ -436,6 +466,30 @@ const Campaigns = () => {
                     isLoading={startAutomatedCallsMutation.isLoading}
                 />
             )}
+
+            {/* Delete Campaign Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={showDeleteConfirm}
+                onClose={() => {
+                    setShowDeleteConfirm(false);
+                    setCampaignToDelete(null);
+                }}
+                onConfirm={() => {
+                    if (campaignToDelete) {
+                        deleteCampaignMutation.mutate(campaignToDelete.id);
+                    }
+                }}
+                title="Delete Campaign"
+                message={
+                    campaignToDelete
+                        ? `Are you sure you want to delete "${campaignToDelete.name}"? This action cannot be undone. All contacts, calls, and data associated with this campaign will be permanently deleted.`
+                        : ''
+                }
+                confirmText="Delete Campaign"
+                cancelText="Cancel"
+                confirmButtonClass="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                isLoading={deleteCampaignMutation.isLoading}
+            />
         </div>
     );
 };

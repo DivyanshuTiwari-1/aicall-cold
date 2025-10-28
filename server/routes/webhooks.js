@@ -410,10 +410,13 @@ router.post('/telnyx', async (req, res) => {
         // Handle different event types
         switch (eventType) {
             case 'call.initiated':
-                logger.info(`📞 [WEBHOOK] call.initiated received`);
+                logger.info(`📞 [WEBHOOK] ============================================`);
+                logger.info(`📞 [WEBHOOK] CALL INITIATED - Phone is ringing!`);
+                logger.info(`📞 [WEBHOOK] ============================================`);
                 logger.info(`   Call Control ID: ${callControlId}`);
                 logger.info(`   Call ID (DB): ${metadata.callId}`);
                 logger.info(`   Contact: ${metadata.contactName}`);
+                logger.info(`   Status: Customer's phone is now ringing...`);
 
                 // Update status to ringing and broadcast
                 if (metadata.callId && metadata.organizationId) {
@@ -432,19 +435,23 @@ router.post('/telnyx', async (req, res) => {
                         { callControlId, message: 'Call is ringing...' }
                     );
                 }
+                logger.info(`📞 [WEBHOOK] ============================================`);
                 break;
 
             case 'call.answered':
-                logger.info(`📞 [WEBHOOK] call.answered received`);
+                logger.info(`🎉 [WEBHOOK] ============================================`);
+                logger.info(`🎉 [WEBHOOK] CUSTOMER ANSWERED THE CALL!`);
+                logger.info(`🎉 [WEBHOOK] ============================================`);
                 logger.info(`   Call Control ID: ${callControlId}`);
                 logger.info(`   Call ID (DB): ${metadata.callId}`);
                 logger.info(`   Contact: ${metadata.contactName}`);
+                logger.info(`   Status: Customer picked up!`);
 
                 // CRITICAL: Answer the call first before doing anything!
                 const telnyxCallControl = require('../services/telnyx-call-control');
-                logger.info(`📞 [WEBHOOK] Sending answer() command to Telnyx...`);
+                logger.info(`📞 [WEBHOOK] Sending ANSWER command to Telnyx...`);
                 await telnyxCallControl.answerCall(callControlId);
-                logger.info(`✅ [WEBHOOK] Call answered by system`);
+                logger.info(`✅ [WEBHOOK] System answered call - Connection established!`);
 
                 // Update status to connected and broadcast
                 if (metadata.callId && metadata.organizationId) {
@@ -454,7 +461,7 @@ router.post('/telnyx', async (req, res) => {
                         WHERE id = $1
                     `, [metadata.callId]);
 
-                    logger.info(`✅ [WEBHOOK] Call status updated to 'connected'`);
+                    logger.info(`✅ [WEBHOOK] Call status updated to 'connected' in database`);
 
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
                         metadata.organizationId,
@@ -465,7 +472,10 @@ router.post('/telnyx', async (req, res) => {
                 }
 
                 // Now start AI conversation
-                logger.info(`🤖 [WEBHOOK] Starting AI conversation...`);
+                logger.info(`🤖 [WEBHOOK] ============================================`);
+                logger.info(`🤖 [WEBHOOK] STARTING AI CONVERSATION ENGINE...`);
+                logger.info(`🤖 [WEBHOOK] AI will now talk to customer`);
+                logger.info(`🤖 [WEBHOOK] ============================================`);
                 await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
                 break;
 

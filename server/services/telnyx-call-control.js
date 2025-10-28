@@ -41,7 +41,17 @@ class TelnyxCallControl {
             // Encode metadata as base64 for client_state
             const clientState = Buffer.from(JSON.stringify(metadata)).toString('base64');
 
-            logger.info(`📞 [TELNYX] Initiating call: ${callId} to ${contact.phone}`);
+            logger.info(`📞 [TELNYX] ============================================`);
+            logger.info(`📞 [TELNYX] INITIATING AI AUTOMATED CALL`);
+            logger.info(`📞 [TELNYX] ============================================`);
+            logger.info(`📞 [TELNYX] Call ID (DB): ${callId}`);
+            logger.info(`📞 [TELNYX] To: ${contact.phone}`);
+            logger.info(`📞 [TELNYX] From: ${fromNumber || this.phoneNumber}`);
+            logger.info(`📞 [TELNYX] Contact: ${contact.first_name} ${contact.last_name}`);
+            logger.info(`📞 [TELNYX] Campaign: ${campaignId}`);
+            logger.info(`📞 [TELNYX] Connection ID: ${this.connectionId}`);
+            logger.info(`📞 [TELNYX] --------------------------------------------`);
+            logger.info(`📞 [TELNYX] Creating call via Telnyx Call Control API...`);
 
             // Create call via Telnyx Call Control API using axios
             const response = await axios.post('https://api.telnyx.com/v2/calls', {
@@ -72,10 +82,15 @@ class TelnyxCallControl {
             });
 
             const call = response.data.data;
-            logger.info(`✅ [TELNYX] Call created successfully`);
-            logger.info(`   Call Control ID: ${call.call_control_id}`);
-            logger.info(`   From: ${fromNumber || this.phoneNumber} → To: ${contact.phone}`);
-            logger.info(`   Call ID (DB): ${callId}`);
+            logger.info(`✅ [TELNYX] CALL CREATED SUCCESSFULLY!`);
+            logger.info(`✅ [TELNYX] Call Control ID: ${call.call_control_id}`);
+            logger.info(`✅ [TELNYX] Status: Call is now DIALING customer...`);
+            logger.info(`✅ [TELNYX] Next Steps:`);
+            logger.info(`   1️⃣  Telnyx is calling: ${contact.phone}`);
+            logger.info(`   2️⃣  When customer answers → call.answered webhook`);
+            logger.info(`   3️⃣  System sends ANSWER command`);
+            logger.info(`   4️⃣  AI conversation starts automatically`);
+            logger.info(`📞 [TELNYX] ============================================`);
 
             return {
                 success: true,
@@ -217,12 +232,14 @@ class TelnyxCallControl {
      */
     async answerCall(callControlId) {
         try {
+            logger.info(`📞 [TELNYX] Sending ANSWER command to Telnyx for call ${callControlId}`);
             await telnyx.calls.answer(callControlId);
-            logger.info(`✅ Answered call ${callControlId}`);
+            logger.info(`✅ [TELNYX] Call ${callControlId} answered successfully - Connection established!`);
+            logger.info(`🤖 [TELNYX] AI is now ready to talk to customer`);
             return { success: true };
 
         } catch (error) {
-            logger.error(`❌ Failed to answer call ${callControlId}:`, error.message);
+            logger.error(`❌ [TELNYX] Failed to answer call ${callControlId}:`, error.message);
             throw error;
         }
     }

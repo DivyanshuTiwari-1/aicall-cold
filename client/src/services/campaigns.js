@@ -39,7 +39,7 @@ const campaignsAPI = {
 
     // Update campaign
     updateCampaign: async (id, data) => {
-        const response = await axios.put(`${API_BASE_URL}/api/v1/campaigns/${id}`, data, {
+        const response = await axios.put(`${API_BASE_URL}/campaigns/${id}`, data, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
@@ -50,7 +50,7 @@ const campaignsAPI = {
 
     // Delete campaign
     deleteCampaign: async (id) => {
-        const response = await axios.delete(`${API_BASE_URL}/api/v1/campaigns/${id}`, {
+        const response = await axios.delete(`${API_BASE_URL}/campaigns/${id}`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
@@ -61,7 +61,7 @@ const campaignsAPI = {
 
     // Get campaign stats
     getCampaignStats: async (id) => {
-        const response = await axios.get(`${API_BASE_URL}/api/v1/campaigns/${id}/stats`, {
+        const response = await axios.get(`${API_BASE_URL}/campaigns/${id}/stats`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
