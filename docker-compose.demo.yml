@@ -46,6 +46,10 @@ services:
       context: .
       dockerfile: Dockerfile.asterisk
     container_name: ai-dialer-asterisk
+    cap_add:
+      - SYS_NICE
+      - NET_ADMIN
+      - NET_RAW
     restart: always
     environment:
       ARI_USERNAME: ${ARI_USERNAME:-ai-dialer}
