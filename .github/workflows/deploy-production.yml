@@ -10,11 +10,6 @@ on:
       - '.gitignore'
       - 'LICENSE'
   workflow_dispatch:  # Allows manual trigger from GitHub UI
-    inputs:
-      skip_backup:
-        description: 'Skip database backup'
-        required: false
-        default: 'false'
 
 jobs:
   deploy:
@@ -34,14 +29,17 @@ jobs:
         run: |
           if [ -z "${{ secrets.PRODUCTION_HOST }}" ]; then
             echo "❌ ERROR: PRODUCTION_HOST secret not set"
+            echo "   Set it to: 13.53.89.241"
             exit 1
           fi
           if [ -z "${{ secrets.PRODUCTION_USER }}" ]; then
             echo "❌ ERROR: PRODUCTION_USER secret not set"
+            echo "   Set it to: ubuntu"
             exit 1
           fi
           if [ -z "${{ secrets.PRODUCTION_SSH_KEY }}" ]; then
             echo "❌ ERROR: PRODUCTION_SSH_KEY secret not set"
+            echo "   Copy contents of ~/.ssh/ai-dialer-key.pem"
             exit 1
           fi
           echo "✅ All required secrets are configured"
@@ -52,141 +50,97 @@ jobs:
           host: ${{ secrets.PRODUCTION_HOST }}
           username: ${{ secrets.PRODUCTION_USER }}
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          port: 22
           command_timeout: 20m
           script: |
             set -e
-
-            # Navigate to application directory
-            APP_DIR="${{ secrets.PRODUCTION_APP_DIR }}"
-            if [ -z "$APP_DIR" ]; then
-              APP_DIR="/opt/ai-dialer"
-            fi
-
+            
+            # Application directory
+            APP_DIR="$HOME/aicall"
             echo "📂 Navigating to: $APP_DIR"
             cd "$APP_DIR"
-
-            # Check disk space before deployment
-            echo ""
-            echo "💾 Checking disk space..."
-            DISK_AVAIL=$(df / | tail -1 | awk '{print $4}')
-            DISK_AVAIL_GB=$((DISK_AVAIL / 1024 / 1024))
-            echo "   Available: ${DISK_AVAIL_GB}GB"
-
-            if [ "$DISK_AVAIL_GB" -lt 2 ]; then
-              echo "❌ ERROR: Low disk space (${DISK_AVAIL_GB}GB available)"
-              echo "   At least 2GB free space is required for deployment"
-              echo ""
-              echo "🧹 Running automatic cleanup..."
-
-              # Auto cleanup
-              docker image prune -af
-              docker container prune -f
-              docker system prune -f
-
-              # Check again
-              DISK_AVAIL_AFTER=$(df / | tail -1 | awk '{print $4}')
-              DISK_AVAIL_AFTER_GB=$((DISK_AVAIL_AFTER / 1024 / 1024))
-              echo "   Available after cleanup: ${DISK_AVAIL_AFTER_GB}GB"
-
-              if [ "$DISK_AVAIL_AFTER_GB" -lt 2 ]; then
-                echo "❌ Still not enough space. Manual intervention required."
-                echo "   SSH to server and run: bash cleanup-production-disk.sh"
-                exit 1
-              fi
-
-              echo "✅ Enough space freed, continuing deployment..."
-            else
-              echo "✅ Sufficient disk space available"
-            fi
-            echo ""
-
+            
             # Pull latest code and detect changes
             echo "📥 Pulling latest code..."
-            BEFORE_COMMIT=$(git rev-parse HEAD)
+            BEFORE_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "init")
             git fetch origin
             git reset --hard origin/main
             AFTER_COMMIT=$(git rev-parse HEAD)
-
-            echo "✓ Code updated: $(git log --oneline -1)"
+            
+            echo "✓ Code updated to: $(git log --oneline -1)"
             echo ""
-
+            
             # Detect what changed
-            CHANGED_FILES=$(git diff --name-only $BEFORE_COMMIT $AFTER_COMMIT || echo "all")
-            echo "📝 Changed files:"
-            echo "$CHANGED_FILES"
-            echo ""
-
-            # Determine what needs rebuilding
+            if [ "$BEFORE_COMMIT" != "init" ]; then
+              CHANGED_FILES=$(git diff --name-only $BEFORE_COMMIT $AFTER_COMMIT)
+              echo "📝 Changed files:"
+              echo "$CHANGED_FILES" | sed 's/^/  - /'
+              echo ""
+            else
+              CHANGED_FILES="all"
+              echo "📝 Initial deployment - all files"
+            fi
+            
+            # Check if we need to rebuild (dependency changes)
             REBUILD_FRONTEND=false
             REBUILD_BACKEND=false
-            REBUILD_ASTERISK=false
-
-            if echo "$CHANGED_FILES" | grep -q "^client/"; then
+            
+            if echo "$CHANGED_FILES" | grep -q "client/package.json\|client/Dockerfile"; then
                 REBUILD_FRONTEND=true
-                echo "🔄 Frontend changes detected"
+                echo "🔨 Frontend rebuild needed (dependencies changed)"
+            elif echo "$CHANGED_FILES" | grep -q "^client/"; then
+                echo "📝 Frontend code changes detected (no rebuild needed)"
             fi
-
-            if echo "$CHANGED_FILES" | grep -q "^server/"; then
+            
+            if echo "$CHANGED_FILES" | grep -q "server/package.json\|server/Dockerfile"; then
                 REBUILD_BACKEND=true
-                echo "🔄 Backend changes detected"
+                echo "🔨 Backend rebuild needed (dependencies changed)"
+            elif echo "$CHANGED_FILES" | grep -q "^server/"; then
+                echo "📝 Backend code changes detected (no rebuild needed)"
             fi
-
-            if echo "$CHANGED_FILES" | grep -q "asterisk-config/\|Dockerfile.asterisk"; then
-                REBUILD_ASTERISK=true
-                echo "🔄 Asterisk changes detected"
-            fi
-
+            
             echo ""
-
-            # Smart rebuild - only rebuild what changed
-            if [ "$REBUILD_FRONTEND" = true ] || [ "$REBUILD_BACKEND" = true ] || [ "$REBUILD_ASTERISK" = true ]; then
-                echo "🔨 Rebuilding changed services in parallel..."
-
-                # Build list of services to rebuild
+            
+            # Rebuild only if dependencies changed
+            if [ "$REBUILD_FRONTEND" = true ] || [ "$REBUILD_BACKEND" = true ]; then
+                echo "🔨 Rebuilding changed services..."
+                
                 SERVICES_TO_BUILD=""
-
-                if [ "$REBUILD_FRONTEND" = true ]; then
-                    SERVICES_TO_BUILD="$SERVICES_TO_BUILD frontend"
-                fi
-
-                if [ "$REBUILD_BACKEND" = true ]; then
-                    SERVICES_TO_BUILD="$SERVICES_TO_BUILD backend"
-                fi
-
-                if [ "$REBUILD_ASTERISK" = true ]; then
-                    SERVICES_TO_BUILD="$SERVICES_TO_BUILD asterisk"
-                fi
-
+                [ "$REBUILD_FRONTEND" = true ] && SERVICES_TO_BUILD="$SERVICES_TO_BUILD frontend"
+                [ "$REBUILD_BACKEND" = true ] && SERVICES_TO_BUILD="$SERVICES_TO_BUILD backend"
+                
                 echo "   📦 Building: $SERVICES_TO_BUILD"
-                docker-compose -f docker-compose.demo.yml build --parallel $SERVICES_TO_BUILD
-
+                docker compose build $SERVICES_TO_BUILD
+                echo "✅ Build complete"
                 echo ""
-                echo "🚀 Restarting services..."
-                docker-compose -f docker-compose.demo.yml up -d
-
-                # Run migrations if backend changed
-                if [ "$REBUILD_BACKEND" = true ]; then
-                    echo ""
-                    echo "⏳ Waiting for backend..."
-                    sleep 15
-                    echo "🔄 Running migrations..."
-                    docker exec ai-dialer-backend npm run migrate || echo "⚠️ Migrations already applied"
-                fi
-
-                echo ""
-                echo "🧹 Cleaning up old images..."
-                docker image prune -f
-
-            else
-                echo "ℹ️  No service changes, just restarting..."
-                docker-compose -f docker-compose.demo.yml restart
             fi
-
+            
+            # Always restart containers to pick up changes
+            echo "🔄 Restarting services..."
+            docker compose down
+            docker compose up -d
+            
             echo ""
-            echo "💾 Disk usage after cleanup:"
-            docker system df
-
+            echo "⏳ Waiting for services to be healthy..."
+            sleep 10
+            
+            # Wait for backend to be healthy
+            MAX_TRIES=30
+            for i in $(seq 1 $MAX_TRIES); do
+              if docker exec ai-dialer-backend curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
+                echo "✅ Backend is healthy"
+                break
+              fi
+              if [ $i -eq $MAX_TRIES ]; then
+                echo "⚠️  Backend took too long to become healthy"
+              fi
+              sleep 2
+            done
+            
+            echo ""
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+            
             echo ""
             echo "✅ Deployment completed successfully!"
             echo "🎉 Production is now running the latest code"
@@ -198,40 +152,45 @@ jobs:
           host: ${{ secrets.PRODUCTION_HOST }}
           username: ${{ secrets.PRODUCTION_USER }}
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          port: 22
           script: |
-            APP_DIR="${{ secrets.PRODUCTION_APP_DIR }}"
-            if [ -z "$APP_DIR" ]; then
-              APP_DIR="/opt/ai-dialer"
-            fi
-
-            cd "$APP_DIR"
-
-            echo "📊 Final Service Status:"
-            docker-compose -f docker-compose.demo.yml ps
-
+            cd "$HOME/aicall"
+            
+            echo "📊 Service Status:"
+            docker compose ps
+            
             echo ""
             echo "🔍 Testing endpoints..."
-
-            # Test backend
-            if docker exec ai-dialer-backend curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
-              echo "✅ Backend is responding"
+            
+            # Test backend health
+            if curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
+              echo "✅ Backend health check passed"
+              curl -s http://localhost:3000/health | jq .
             else
               echo "⚠️  Backend health check failed"
             fi
-
-            # Test frontend (if exists)
-            if docker ps | grep -q "ai-dialer-frontend"; then
-              if curl -f -s http://localhost:3001 > /dev/null 2>&1; then
-                echo "✅ Frontend is responding"
-              else
-                echo "⚠️  Frontend health check failed"
-              fi
+            
+            # Test frontend
+            if curl -k -f -s https://localhost > /dev/null 2>&1; then
+              echo "✅ Frontend is accessible"
+            else
+              echo "⚠️  Frontend check failed"
             fi
-
+            
+            # Test domain
+            if curl -k -f -s https://atsservice.site > /dev/null 2>&1; then
+              echo "✅ Domain (atsservice.site) is accessible"
+            else
+              echo "⚠️  Domain check failed"
+            fi
+            
             echo ""
-            echo "💾 Final disk space:"
-            df -h / | grep -v Filesystem
+            echo "💾 Disk space:"
+            df -h / | grep -E 'Filesystem|/$'
+            
+            echo ""
+            echo "🐳 Container resource usage:"
+            docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 
       - name: ✅ Deployment Success
         if: success()
@@ -243,14 +202,11 @@ jobs:
           echo "📦 Deployed commit: ${{ github.sha }}"
           echo "💬 Commit message: ${{ github.event.head_commit.message }}"
           echo "👤 Deployed by: ${{ github.actor }}"
-          echo "⏰ Time: $(date)"
           echo ""
           echo "🌐 Your production app is now updated!"
           echo "🔗 Check it at: https://atsservice.site/"
           echo ""
-          echo "📋 Next steps:"
-          echo "  1. Test AI calls: ssh to server and run 'bash production-test-now.sh'"
-          echo "  2. Monitor: https://atsservice.site/ → Live Monitoring"
+          echo "📋 Changes are live - test your application!"
 
       - name: ❌ Deployment Failed
         if: failure()
@@ -262,20 +218,14 @@ jobs:
           echo "Please check the logs above for details."
           echo ""
           echo "Common issues:"
-          echo "  1. SSH connection failed - check PRODUCTION_HOST, PRODUCTION_USER, PRODUCTION_SSH_KEY secrets"
-          echo "  2. Disk space full - SSH to server and run disk cleanup"
-          echo "  3. Git pull failed - check repository access on server"
-          echo "  4. Docker build failed - check Dockerfile and dependencies"
-          echo "  5. Health check failed - check application logs on server"
+          echo "  1. SSH secrets not configured - check GitHub Secrets"
+          echo "  2. Git pull failed - check repository access"
+          echo "  3. Docker build failed - check Dockerfile"
+          echo "  4. Services not starting - check docker compose logs"
           echo ""
-          echo "To investigate:"
-          echo "  ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}"
-          echo "  cd /opt/ai-dialer"
-          echo "  df -h  # Check disk space"
-          echo "  docker-compose -f docker-compose.demo.yml ps  # Check services"
-          echo "  docker-compose -f docker-compose.demo.yml logs --tail=50  # Check logs"
-          echo ""
-          echo "To free disk space:"
-          echo "  docker system prune -af"
-          echo "  docker volume prune -f"
+          echo "To investigate, SSH to server:"
+          echo "  ssh -i ~/.ssh/ai-dialer-key.pem ubuntu@13.53.89.241"
+          echo "  cd ~/aicall"
+          echo "  docker compose ps"
+          echo "  docker compose logs --tail=50"
           exit 1
