@@ -39,7 +39,8 @@ const { connectRedis } = require('./config/redis');
 const { createTables } = require('./scripts/migrate');
 const logger = require('./utils/logger');
 const { authenticateToken } = require('./middleware/auth');
-const stasisManager = require('./services/stasis-apps');
+// Stasis manager removed - all calls now use Telnyx
+// const stasisManager = require('./services/stasis-apps');
 // AGI Server removed - now using Telnyx Call Control API directly for automated calls
 // const AgiServer = require('./services/agi/agi-server');
 const addSipFields = require('./scripts/migrations/add-sip-fields');
@@ -322,20 +323,8 @@ async function startServer() {
         await addPhoneNumberFields();
         await addCallStatusFields();
 
-        // Initialize Stasis applications (non-blocking - will retry if Asterisk not ready)
-        stasisManager.initialize().catch(err => {
-            logger.warn('⚠️  Asterisk not ready yet, will retry later:', err.message);
-            // Retry every 10 seconds
-            const retryInterval = setInterval(async () => {
-                try {
-                    await stasisManager.initialize();
-                    logger.info('✅ Asterisk connected successfully');
-                    clearInterval(retryInterval);
-                } catch (e) {
-                    logger.debug('Asterisk still not ready, retrying...');
-                }
-            }, 10000);
-        });
+        // Asterisk/Stasis removed - all calls now use Telnyx (automated & manual via WebRTC)
+        logger.info('✅ Asterisk/ARI removed - using Telnyx for all call types');
 
         // FastAGI Server removed - now using Telnyx Call Control API directly
         // Automated calls now work via webhooks at /api/v1/webhooks/telnyx
@@ -359,15 +348,13 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGINT', async () => {
     logger.info('🔄 Received SIGINT, shutting down gracefully...');
-    await stasisManager.shutdown();
-    // AGI server cleanup removed - no longer needed
+    // Stasis manager removed - no longer needed
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     logger.info('🔄 Received SIGTERM, shutting down gracefully...');
-    await stasisManager.shutdown();
-    // AGI server cleanup removed - no longer needed
+    // Stasis manager removed - no longer needed
     process.exit(0);
 });
 

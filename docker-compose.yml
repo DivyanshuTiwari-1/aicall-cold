@@ -30,16 +30,7 @@ services:
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
       - JWT_EXPIRES_IN=24h
 
-      # Asterisk ARI (still needed for manual browser phone calls)
-      - ARI_URL=http://asterisk:8088/ari
-      - ARI_USERNAME=ai-dialer
-      - ARI_PASSWORD=ai-dialer-password
-
-      # FastAGI removed - automated calls now use Telnyx Call Control API
-
-      # Asterisk WebRTC Configuration
-      - ASTERISK_HOST=localhost
-      - ASTERISK_WS_PORT=8088
+      # Asterisk removed - all calls now use Telnyx (automated & manual)
 
       # Telnyx Call Control API (for automated AI calls)
       # ⚡ REQUIRED: Get your API key from portal.telnyx.com
@@ -112,8 +103,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-      asterisk:
-        condition: service_started
     networks:
       - ai-dialer-net
     volumes:
@@ -160,28 +149,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ☎️ Asterisk PBX Server
-  asterisk:
-    image: andrius/asterisk
-    container_name: asterisk
-    networks:
-      - ai-dialer-net
-    ports:
-      - "5060:5060/udp"
-      - "5060:5060/tcp"
-      - "8088:8088"
-    volumes:
-      - ./asterisk-config:/etc/asterisk
-      - ./asterisk-logs:/var/log/asterisk
-      - ./audio-cache:/var/lib/asterisk/sounds/custom
-      - ./server/asterisk:/var/lib/asterisk/agi-bin
-      - ./asterisk-config/pjsip_dynamic.conf:/etc/asterisk/pjsip_dynamic.conf
-    environment:
-      - ARI_PASSWORD=ai-dialer-password
-      - AGI_HOST=ai_dialer
-      - AGI_PORT=4573
-    restart: always
 
   # 🗄️ PostgreSQL Database
   postgres:
