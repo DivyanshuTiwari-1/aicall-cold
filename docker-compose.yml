@@ -1,194 +1,193 @@
+version: '3.8'
+
 services:
-  # 🧠 AI Dialer Backend
-  ai_dialer:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ai_dialer}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-dialer-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: sh -c "redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}"
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-dialer-network
+
+  # Backend API Server
+  backend:
     build:
       context: ./server
-      dockerfile: Dockerfile.dev
-    container_name: ai_dialer_server
-    ports:
-      - "3000:3000"
-      # Port 4573 removed - AGI server no longer needed (using Telnyx webhooks)
+      dockerfile: Dockerfile
+    container_name: ai-dialer-backend
+    restart: always
     environment:
-      # Database
+      # Node Environment
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+
+      # Database Configuration
       - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=ai_dialer
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-ai_dialer}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_POOL_MIN=${DB_POOL_MIN:-2}
+      - DB_POOL_MAX=${DB_POOL_MAX:-10}
+      - DB_POOL_IDLE_TIMEOUT=${DB_POOL_IDLE_TIMEOUT:-30000}
 
-      # Redis
+      # Redis Configuration
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
 
-      # API
-      - NODE_ENV=development
-      - DOCKER_ENV=true
-      - PORT=3000
-      - API_URL=http://localhost:3000/api/v1
-      - API_INTERNAL_URL=http://ai_dialer:3000
-      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-      - JWT_EXPIRES_IN=24h
+      # JWT & Session
+      - JWT_SECRET=${JWT_SECRET:-a8f5f167f44f4964e6c998dee827110c}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - SESSION_SECRET=${SESSION_SECRET:-change-this-session-secret}
 
-      # Asterisk removed - all calls now use Telnyx (automated & manual)
+      # API URLs
+      - API_URL=${API_URL:-http://localhost:3000/api/v1}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3001,http://localhost:80}
 
-      # Telnyx Call Control API (for automated AI calls)
-      # ⚡ REQUIRED: Get your API key from portal.telnyx.com
-      - TELNYX_API_KEY=KEY0199FFA0EB5D4947F9F3CD455BE32997
-      - TELNYX_CONNECTION_ID=2811216964129653991
-      - TELNYX_PHONE_NUMBER=+18058690081
-      - TELNYX_DID=+18058690081
+      # Telnyx Configuration (Automated Calls - Call Control API)
+      - TELNYX_API_KEY=${TELNYX_API_KEY}
+      - TELNYX_CONNECTION_ID=${TELNYX_CONNECTION_ID}
+      - TELNYX_PHONE_NUMBER=${TELNYX_PHONE_NUMBER}
+      - TELNYX_DID=${TELNYX_PHONE_NUMBER}
 
-      # Telnyx WebRTC Configuration (for browser-based manual calls)
-      - TELNYX_SIP_USERNAME=userinfo63399
-      - TELNYX_SIP_PASSWORD=-WUgqhX.ZXYM
-      - TELNYX_CALLER_ID=+18058690081
-      - TELNYX_DOMAIN=sip.telnyx.com
-
-      # Telnyx Legacy (kept for backward compatibility)
-      - TELNYX_USERNAME=info@pitchnhire.com
-      - TELNYX_PASSWORD=DxZU$m4#GuFhRTp
-      - TELNYX_SIP_URI=sip:info@pitchnhire.com@sip.telnyx.com
-      - TELNYX_IP_RANGE=66.109.0.0/16
-      - TELNYX_TIMEOUT=30
+      # Telnyx WebRTC/SIP Configuration (Manual Browser Calls)
+      - TELNYX_SIP_USERNAME=${TELNYX_SIP_USERNAME}
+      - TELNYX_SIP_PASSWORD=${TELNYX_SIP_PASSWORD}
+      - TELNYX_CALLER_ID=${TELNYX_CALLER_ID}
+      - TELNYX_DOMAIN=${TELNYX_DOMAIN:-sip.telnyx.com}
+      - TELNYX_SIP_URI=${TELNYX_SIP_URI}
+      - TELNYX_IP_RANGE=${TELNYX_IP_RANGE:-}
 
       # Voice Stack
-      - VOICE_STACK=self_hosted
+      - VOICE_STACK=${VOICE_STACK:-self_hosted}
 
-      # CORS - Allow both local frontend and Docker frontend
-      - CORS_ORIGIN=http://localhost:3001,http://localhost:3000,http://frontend:3001
+      # TTS Configuration
+      - TTS_ENGINE=${TTS_ENGINE:-google}
+      - TTS_LANGUAGE=${TTS_LANGUAGE:-en-US}
+      - TTS_VOICE=${TTS_VOICE:-en-US-Wavenet-D}
+      - TTS_SPEED=${TTS_SPEED:-1.0}
+      - TTS_PITCH=${TTS_PITCH:-0.0}
+      - TTS_VOLUME=${TTS_VOLUME:-0.0}
+      - TTS_CACHE_ENABLED=${TTS_CACHE_ENABLED:-true}
+      - TTS_CACHE_TTL=${TTS_CACHE_TTL:-3600}
+      - TTS_CACHE_MAX_SIZE=${TTS_CACHE_MAX_SIZE:-1000}
 
-      # Logging
-      - LOG_LEVEL=info
-      - DEBUG=ai-dialer:*
-      - ENABLE_DEBUG_LOGS=true
+      # Call Configuration
+      - DEFAULT_CALL_TIMEOUT=${DEFAULT_CALL_TIMEOUT:-30}
+      - MAX_CALL_DURATION=${MAX_CALL_DURATION:-300}
+      - MAX_CONCURRENT_CALLS=${MAX_CONCURRENT_CALLS:-10}
 
       # Features
-      - ENABLE_EMOTION_DETECTION=true
-      - ENABLE_VOICE_ANALYTICS=true
-      - ENABLE_CALL_RECORDING=true
-      - ENABLE_REAL_TIME_MONITORING=true
-      - ENABLE_AI_CONVERSATION=true
+      - ENABLE_EMOTION_DETECTION=${ENABLE_EMOTION_DETECTION:-true}
+      - ENABLE_VOICE_ANALYTICS=${ENABLE_VOICE_ANALYTICS:-true}
+      - ENABLE_CALL_RECORDING=${ENABLE_CALL_RECORDING:-true}
+      - ENABLE_REAL_TIME_MONITORING=${ENABLE_REAL_TIME_MONITORING:-true}
+      - ENABLE_AI_CONVERSATION=${ENABLE_AI_CONVERSATION:-true}
 
-      # TTS - Using eSpeak for cost optimization
-      - TTS_ENGINE=espeak
-      - TTS_LANGUAGE=en-US
-      - TTS_VOICE=en-us
-      - TTS_SPEED=150
-      - TTS_PITCH=50
-      - TTS_VOLUME=100
-      - TTS_CACHE_ENABLED=true
-      - TTS_CACHE_TTL=3600
-      - TTS_CACHE_MAX_SIZE=1000
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FILE=${LOG_FILE:-logs/app.log}
+      - ERROR_LOG_FILE=${ERROR_LOG_FILE:-logs/error.log}
+      - DEBUG=${DEBUG:-ai-dialer:*}
+      - ENABLE_DEBUG_LOGS=${ENABLE_DEBUG_LOGS:-true}
 
-      # Call Settings - Optimized for cost
-      - DEFAULT_CALL_TIMEOUT=30
-      - MAX_CALL_DURATION=180
-      - MAX_CONCURRENT_CALLS=10
-
-      # Rate Limiting - More generous for development
-      - RATE_LIMIT_WINDOW_MS=900000
-      - RATE_LIMIT_MAX_REQUESTS=1000
+      # Rate Limiting
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
 
       # Health Check
-      - HEALTH_CHECK_INTERVAL=30000
-      - HEALTH_CHECK_TIMEOUT=5000
+      - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30000}
+      - HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-5000}
 
-      # Database Pool
-      - DB_POOL_MIN=2
-      - DB_POOL_MAX=10
-      - DB_POOL_IDLE_TIMEOUT=30000
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - ai-dialer-net
+      # SSL Configuration (optional)
+      - SSL_ENABLED=${SSL_ENABLED:-false}
+      - SSL_CERT_PATH=${SSL_CERT_PATH:-}
+      - SSL_KEY_PATH=${SSL_KEY_PATH:-}
+
     volumes:
-      - ./server:/usr/src/app
-      - ./logs:/usr/src/app/logs
-      - ./audio-cache:/usr/src/app/audio-cache
-      - ./asterisk-config:/usr/src/asterisk-config
-      - ./docker-init.sh:/usr/local/bin/docker-init.sh
-      - /usr/src/app/node_modules
-    restart: always
+      - ./server/uploads:/app/uploads
+      - ./server/logs:/app/logs
+      - ./audio-cache:/app/audio-cache
+
+    ports:
+      - "3000:3000"
+
     healthcheck:
       test: ["CMD", "node", "healthcheck.js"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
-  # 🌐 AI Dialer Frontend
+    networks:
+      - ai-dialer-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Frontend React App
   frontend:
     build:
       context: ./client
-      dockerfile: Dockerfile.dev
-    container_name: ai_dialer_frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: /api/v1
+        REACT_APP_WS_URL: /ws
+    container_name: ai-dialer-frontend
+    restart: always
     ports:
-      - "3001:3001"
-    environment:
-      - REACT_APP_API_URL=http://localhost:3000/api/v1
-      - REACT_APP_WS_URL=ws://localhost:3000
-      - REACT_APP_API_BASE_URL=http://localhost:3000
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Mount SSL certificates if available
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - ai-dialer-network
     depends_on:
-      ai_dialer:
+      backend:
         condition: service_healthy
-    networks:
-      - ai-dialer-net
-    volumes:
-      - ./client/src:/app/src
-      - ./client/public:/app/public
-      - ./client/tailwind.config.js:/app/tailwind.config.js
-      - ./client/postcss.config.js:/app/postcss.config.js
-      - ./client/package.json:/app/package.json
-      - /app/node_modules
-    restart: always
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # 🗄️ PostgreSQL Database
-  postgres:
-    image: postgres:15
-    container_name: postgres
-    restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ai_dialer
-      POSTGRES_HOST_AUTH_METHOD: trust
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-    networks:
-      - ai-dialer-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_dialer"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ⚡ Redis Cache
-  redis:
-    image: redis:7
-    container_name: redis
-    ports:
-      - "6379:6379"
-    networks:
-      - ai-dialer-net
-    restart: always
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
 
 networks:
-  ai-dialer-net:
+  ai-dialer-network:
     driver: bridge
-volumes:
-  pg_data:

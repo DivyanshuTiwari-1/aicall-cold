@@ -1,21 +1,33 @@
-# Use Node.js LTS
+# Production Dockerfile for AI Dialer Backend
 FROM node:20-alpine
 
-# Create app directory
-WORKDIR /usr/src/app
+# Install system dependencies
+RUN apk add --no-cache \
+    postgresql-client \
+    curl
 
-# Copy package.json and package-lock.json
+# Create app directory
+WORKDIR /app
+
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install production dependencies only
+RUN npm ci --only=production && \
+    npm cache clean --force
 
-# Copy rest of the app
+# Copy application code
 COPY . .
+
+# Create necessary directories
+RUN mkdir -p uploads logs audio-cache
 
 # Expose port
 EXPOSE 3000
 
-# Start app
-CMD ["npm", "run", "dev"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node healthcheck.js
 
+# Start application
+CMD ["node", "index.js"]
