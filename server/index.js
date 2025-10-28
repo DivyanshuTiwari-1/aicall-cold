@@ -348,7 +348,7 @@ async function startServer() {
             logger.info(`🚀 AI Dialer API Server running on port ${PORT}`);
             logger.info(`📊 Health check: http://localhost:${PORT}/health`);
             logger.info(`🔌 WebSocket server ready for real-time connections`);
-            logger.info(`🤖 FastAGI Server ready for AI conversations on port ${AGI_PORT}`);
+            // AGI Server removed - automated calls now use Telnyx webhooks
         });
     } catch (error) {
         logger.error('Failed to start server:', error);
