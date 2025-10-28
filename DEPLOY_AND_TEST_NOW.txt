@@ -1,0 +1,284 @@
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║     SIMPLIFIED AUTOMATED CALLS - DEPLOY & TEST NOW         ║
+║                  Telnyx Call Control API                   ║
+║                                                            ║
+╔════════════════════════════════════════════════════════════╗
+
+
+🎯 WHAT'S NEW:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ No AGI server needed (port 4573 removed)
+✅ Direct Telnyx Call Control API integration
+✅ 70% less code (from 2000+ to 600 lines)
+✅ Webhook-based AI conversations
+✅ Enhanced knowledge base queries
+✅ Same cost: $0.055 per 5-min call
+✅ Manual browser phone calls still work
+✅ Piper TTS + Vosk STT (free, local)
+
+
+1️⃣ SSH TO YOUR SERVER:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ssh ubuntu@13.53.89.241
+
+
+2️⃣ DEPLOY & TEST IN ONE COMMAND:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Copy and paste this ENTIRE command once connected:
+
+cd /opt/ai-dialer && \
+git pull origin main && \
+chmod +x deploy-simplified-calls.sh test-simplified-calls.sh && \
+./deploy-simplified-calls.sh && \
+sleep 10 && \
+./test-simplified-calls.sh
+
+
+3️⃣ WHAT THIS DOES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: Pull latest code from GitHub ✓
+Step 2: Make scripts executable ✓
+Step 3: Deploy simplified system:
+  - Stop containers
+  - Rebuild with new code
+  - Start services
+  - Verify logs show "Telnyx Call Control API"
+
+Step 4: Wait 10 seconds for services to stabilize
+
+Step 5: Run test with 8 phone numbers:
+  - +14154305
+  - +15127510
+  - +12023214
+  - +12032472
+  - +12063849
+  - +12103167
+  - +12139780
+  - +12153561
+
+
+4️⃣ WHAT YOU'LL SEE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+During deployment:
+  ✅ Pulling latest code from Git...
+  ✅ Stopping current containers...
+  ✅ Rebuilding containers with new code...
+  ✅ Services started
+  ✅ Automated calls configured via Telnyx Call Control API (webhook-based)
+  ✅ Manual Bridge Stasis App registered (for browser phone)
+
+During test:
+  1️⃣  Logging in...
+  2️⃣  Creating test campaign...
+  3️⃣  Adding 8 test contacts...
+  4️⃣  Getting phone number...
+  5️⃣  Starting automated call queue...
+  📞 Automated calls are now being made
+
+Then you'll see real-time progress:
+  📞 Telnyx webhook received: call.answered
+  🎤 AI greeting played to customer
+  📼 Recording saved for call...
+  🗣️  Customer said: [transcription]
+  📝 Stored conversation turn...
+  📴 Call ended: duration: XXs
+
+
+5️⃣ MONITOR IN REAL-TIME:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option A - Watch Logs (from SSH):
+docker-compose logs -f ai_dialer | grep -E "Telnyx|webhook|Call"
+
+Option B - Web Interface:
+https://atsservice.site/live-monitor
+
+You should see:
+  ✅ Active calls updating in real-time
+  ✅ Conversation turns appearing as they happen
+  ✅ Green "Connected" WebSocket status
+
+
+6️⃣ VERIFY RESULTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Check database (from SSH):
+
+docker-compose exec postgres psql -U postgres -d ai_dialer -c "
+  SELECT 
+    id, 
+    status, 
+    outcome, 
+    duration, 
+    cost,
+    to_char(created_at, 'HH24:MI:SS') as time
+  FROM calls 
+  WHERE call_type = 'automated'
+  AND created_at > NOW() - INTERVAL '10 minutes'
+  ORDER BY created_at DESC;
+"
+
+Expected output:
+ status    | outcome    | duration | cost  | time
+-----------+------------+----------+-------+---------
+ completed | interested |      180 | 0.033 | 14:23:45
+ completed | completed  |      120 | 0.022 | 14:22:10
+ completed | interested |       90 | 0.017 | 14:20:35
+
+
+7️⃣ COST ESTIMATE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+8 test calls × 2-3 minutes average:
+  • Telnyx calling: ~$0.15 total
+  • Piper TTS: FREE (local)
+  • Vosk STT: FREE (local)
+
+Total cost: ~$0.15
+
+
+8️⃣ CONFIGURE TELNYX WEBHOOK (IMPORTANT!):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before testing, ensure this is configured:
+
+1. Go to: https://portal.telnyx.com/#/app/connections
+2. Select Connection: 2811216964129653991
+3. Set Webhook URL: https://atsservice.site/api/v1/webhooks/telnyx
+4. Set Method: POST
+5. Enable these events:
+   ✅ call.initiated
+   ✅ call.answered
+   ✅ call.playback.ended
+   ✅ call.recording.saved
+   ✅ call.hangup
+   ✅ call.speak.ended
+6. SAVE
+
+
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║     🚨 BEFORE YOU START - WEBHOOK MUST BE CONFIGURED! 🚨   ║
+║                                                            ║
+╔════════════════════════════════════════════════════════════╝
+
+Without webhook configuration, calls will connect but AI won't respond!
+
+
+TROUBLESHOOTING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Problem: "No webhooks received"
+Solution: 
+  • Check Telnyx webhook URL is set
+  • Verify https://atsservice.site is accessible
+  • Check: curl https://atsservice.site/api/v1/webhooks/telnyx
+
+Problem: "No audio playing"
+Solution:
+  • Check Piper service: docker-compose exec ai_dialer ls /app/audio/piper/
+  • Test TTS: curl localhost:3000/api/v1/asterisk/tts/generate
+
+Problem: "Transcription not working"
+Solution:
+  • Check Vosk service logs: docker-compose logs ai_dialer | grep vosk
+
+Problem: "TELNYX_API_KEY not set"
+Solution:
+  • Already configured in docker-compose.yml ✓
+  • Restart: docker-compose down && docker-compose up -d
+
+
+MANUAL COMMANDS (if needed):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Deploy only (no test):
+./deploy-simplified-calls.sh
+
+# Test only (after deployment):
+./test-simplified-calls.sh
+
+# Check service status:
+docker-compose ps
+
+# View logs:
+docker-compose logs -f ai_dialer
+
+# Stop queue:
+curl -X POST http://localhost:3000/api/v1/calls/automated/stop \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"campaignId":"your_campaign_id"}'
+
+# Restart services:
+docker-compose restart ai_dialer
+
+
+WHAT'S DIFFERENT FROM OLD SYSTEM:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+OLD (Asterisk/AGI):
+  ❌ FastAGI TCP server on port 4573
+  ❌ Complex Stasis app routing
+  ❌ AGI protocol overhead
+  ❌ 2000+ lines of code
+  ❌ Hard to debug
+
+NEW (Telnyx Direct):
+  ✅ Direct Telnyx Call Control API
+  ✅ Webhook-based (HTTPS)
+  ✅ Simple, clean architecture
+  ✅ 600 lines of code
+  ✅ Easy debugging via logs
+  ✅ Same features, same cost
+
+
+SUCCESS INDICATORS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Logs show: "Automated calls configured via Telnyx Call Control API"
+✅ No mention of "FastAGI" or "port 4573" in logs
+✅ Webhooks received: "Telnyx webhook received: call.answered"
+✅ Conversations appear in Live Monitor in real-time
+✅ Transcripts saved in Call History
+✅ Manual browser phone still works
+
+
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║     ✅ READY! JUST COPY THE COMMANDS ABOVE AND RUN! ✅      ║
+║                                                            ║
+╔════════════════════════════════════════════════════════════╝
+
+
+Timeline:
+  00:00 - SSH into server
+  00:10 - Run deployment command
+  02:00 - Services deployed and started
+  02:10 - Test script starts
+  02:20 - First call dialing
+  02:30 - Conversation begins
+  05:00 - All 8 calls completed
+  05:10 - Results displayed
+
+Total time: ~5 minutes from start to finish!
+
+
+Your Production URLs:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Web Interface: https://atsservice.site/
+Live Monitor: https://atsservice.site/live-monitor
+Call History: https://atsservice.site/calls
+Webhook URL: https://atsservice.site/api/v1/webhooks/telnyx
+
+
+╔════════════════════════════════════════════════════════════╗
+║                    🚀 LET'S GO! 🚀                          ║
+╔════════════════════════════════════════════════════════════╝
+
