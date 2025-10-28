@@ -73,7 +73,7 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-change-this-session-secret}
 
       # API URLs
-      - API_URL=${API_URL:-http://localhost:3000/api/v1}
+      - API_URL=${API_URL:-http://localhost:3000}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3001,http://localhost:80}
 
       # Telnyx Configuration (Automated Calls - Call Control API)
