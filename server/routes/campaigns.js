@@ -83,12 +83,12 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
             ORDER BY c.created_at DESC
         `, params);
 
-        // Get active queue status from queue service
-        const { callQueue } = require('../services/queue');
+        // Get active queue status from simple queue service
+        const simpleQueue = require('../services/simple-automated-queue');
 
         const campaigns = result.rows.map(campaign => {
             // Check if this campaign has an active queue
-            const queueStatus = callQueue.getQueueStatus(campaign.id);
+            const queueStatus = simpleQueue.getQueueStatus(campaign.id);
             const isQueueActive = queueStatus && queueStatus.status === 'running';
 
             return {
@@ -155,8 +155,8 @@ router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), 
         const campaign = result.rows[0];
 
         // Check if this campaign has an active queue
-        const { callQueue } = require('../services/queue');
-        const queueStatus = callQueue.getQueueStatus(id);
+        const simpleQueue = require('../services/simple-automated-queue');
+        const queueStatus = simpleQueue.getQueueStatus(id);
         const isQueueActive = queueStatus && queueStatus.status === 'running';
 
         res.json({

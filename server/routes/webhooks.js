@@ -375,4 +375,107 @@ router.get('/events',
   }
 );
 
+/**
+ * @route POST /api/v1/webhooks/telnyx
+ * @desc Handle Telnyx Call Control webhooks for automated AI calls
+ * @access Public (Telnyx sends these)
+ */
+router.post('/telnyx', async (req, res) => {
+    try {
+        const event = req.body.data;
+        const eventType = event.event_type;
+
+        logger.info(`📞 Telnyx webhook received: ${eventType}`);
+
+        // Parse metadata from client_state
+        let metadata = {};
+        try {
+            if (event.payload && event.payload.client_state) {
+                const decoded = Buffer.from(event.payload.client_state, 'base64').toString('utf-8');
+                metadata = JSON.parse(decoded);
+            }
+        } catch (parseError) {
+            logger.error('Failed to parse client_state metadata:', parseError);
+        }
+
+        const callControlId = event.payload?.call_control_id;
+
+        // Import conversation orchestrator
+        const telnyxAIConversation = require('../services/telnyx-ai-conversation');
+
+        // Handle different event types
+        switch (eventType) {
+            case 'call.initiated':
+                logger.info(`Call initiated: ${callControlId}`);
+                // Call is dialing, no action needed
+                break;
+
+            case 'call.answered':
+                logger.info(`Call answered: ${callControlId}`);
+                // Customer answered - start AI conversation
+                await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
+                break;
+
+            case 'call.playback.ended':
+                logger.info(`Playback ended: ${callControlId}`);
+                // AI finished speaking - start recording customer
+                await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
+                break;
+
+            case 'call.recording.saved':
+                logger.info(`Recording saved: ${callControlId}`);
+                const recordingUrl = event.payload?.recording_urls?.wav || event.payload?.public_recording_url;
+
+                if (recordingUrl) {
+                    // Customer finished speaking - transcribe and respond
+                    await telnyxAIConversation.handleRecordingSaved(callControlId, recordingUrl, metadata);
+                } else {
+                    logger.warn('Recording URL not found in webhook payload');
+                }
+                break;
+
+            case 'call.hangup':
+                logger.info(`Call hangup: ${callControlId}`);
+                const duration = event.payload?.hangup_source ?
+                    Math.floor(event.payload.end_time - event.payload.start_time) :
+                    0;
+
+                // Call ended - save transcript and update database
+                await telnyxAIConversation.handleCallEnded(callControlId, metadata, duration);
+                break;
+
+            case 'call.machine.detection.ended':
+                // Answering machine detection completed
+                logger.info(`Machine detection: ${event.payload?.result}`);
+
+                if (event.payload?.result === 'human') {
+                    // Human answered, treat as call.answered
+                    await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
+                } else {
+                    // Machine/voicemail detected, hangup
+                    const telnyxCallControl = require('../services/telnyx-call-control');
+                    await telnyxCallControl.hangupCall(callControlId);
+                }
+                break;
+
+            case 'call.speak.ended':
+                // Similar to playback.ended but for TTS via Telnyx
+                logger.info(`Speak ended: ${callControlId}`);
+                await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
+                break;
+
+            default:
+                logger.info(`Unhandled Telnyx event type: ${eventType}`);
+        }
+
+        // Always respond 200 OK to Telnyx
+        res.status(200).json({ received: true });
+
+    } catch (error) {
+        logger.error('Error handling Telnyx webhook:', error);
+        // Still return 200 to prevent Telnyx from retrying
+        res.status(200).json({ received: true, error: error.message });
+    }
+});
+
 module.exports = router;

@@ -820,12 +820,12 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
             logger.info(`Campaign ${campaignId} status updated from draft to active`);
         }
 
-        // Start the automated call queue
+        // Start the automated call queue (SIMPLIFIED VERSION - using Telnyx direct)
         try {
-            const { callQueue } = require('../services/queue');
-            await callQueue.startQueue(null, campaignId, phoneNumberId, selectedNumber.phone_number);
+            const simpleQueue = require('../services/simple-automated-queue');
+            await simpleQueue.startQueue(campaignId, phoneNumberId, selectedNumber.phone_number);
 
-            logger.info(`Automated calls started for campaign: ${campaignId} using phone number: ${selectedNumber.phone_number}`);
+            logger.info(`✅ Automated calls started for campaign: ${campaignId} using phone number: ${selectedNumber.phone_number}`);
 
             res.json({
                 success: true,
@@ -864,12 +864,12 @@ router.post('/automated/stop', authenticateToken, requireRole('admin', 'manager'
 
         const { campaignId } = value;
 
-        // Stop the automated call queue
+        // Stop the automated call queue (SIMPLIFIED VERSION)
         try {
-            const { callQueue } = require('../services/queue');
-            await callQueue.stopQueue(campaignId);
+            const simpleQueue = require('../services/simple-automated-queue');
+            await simpleQueue.stopQueue(campaignId);
 
-            logger.info(`Automated calls stopped for campaign: ${campaignId}`);
+            logger.info(`⏹️  Automated calls stopped for campaign: ${campaignId}`);
 
             res.json({
                 success: true,

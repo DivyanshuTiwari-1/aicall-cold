@@ -40,7 +40,8 @@ const { createTables } = require('./scripts/migrate');
 const logger = require('./utils/logger');
 const { authenticateToken } = require('./middleware/auth');
 const stasisManager = require('./services/stasis-apps');
-const AgiServer = require('./services/agi/agi-server');
+// AGI Server removed - now using Telnyx Call Control API directly for automated calls
+// const AgiServer = require('./services/agi/agi-server');
 const addSipFields = require('./scripts/migrations/add-sip-fields');
 const addTranscriptField = require('./scripts/migrations/add-transcript-field');
 const addPhoneNumberFields = require('./scripts/migrations/add-phone-number-fields');
@@ -123,7 +124,8 @@ app.use('/api/v1/manualcalls', authenticateToken, manualCallRoutes);
 app.use('/api/v1/ai-intelligence', authenticateToken, aiIntelligenceRoutes);
 app.use('/api/v1/billing', authenticateToken, billingRoutes);
 app.use('/api/v1/warm-transfers', authenticateToken, warmTransferRoutes);
-app.use('/api/v1/webhooks', authenticateToken, webhookRoutes);
+// Webhooks route - Telnyx endpoint is public, others require auth (handled in route file)
+app.use('/api/v1/webhooks', webhookRoutes);
 app.use('/api/v1/simple-calls', authenticateToken, simpleCallRoutes);
 app.use('/api/v1/phone-numbers', authenticateToken, phoneNumberRoutes);
 app.use('/api/v1/campaigns', authenticateToken, campaignRoutes);
@@ -335,20 +337,11 @@ async function startServer() {
             }, 10000);
         });
 
-        // Initialize FastAGI Server for AI conversations
-        const AGI_PORT = parseInt(process.env.AGI_PORT) || 4573;
-        const agiServer = new AgiServer(AGI_PORT);
+        // FastAGI Server removed - now using Telnyx Call Control API directly
+        // Automated calls now work via webhooks at /api/v1/webhooks/telnyx
+        logger.info(`✅ Automated calls configured via Telnyx Call Control API (webhook-based)`);
 
-        try {
-            await agiServer.start();
-            logger.info(`✅ FastAGI Server started on port ${AGI_PORT}`);
-
-            // Store globally for cleanup
-            global.agiServer = agiServer;
-        } catch (agiError) {
-            logger.error('❌ Failed to start FastAGI Server:', agiError);
-            logger.warn('⚠️  AI automated calls will not work without AGI server');
-        }
+        // Note: Manual calls still use Asterisk/Stasis for browser phone functionality
 
         const PORT = process.env.PORT || 3000;
         server.listen(PORT, () => {
@@ -367,18 +360,14 @@ async function startServer() {
 process.on('SIGINT', async () => {
     logger.info('🔄 Received SIGINT, shutting down gracefully...');
     await stasisManager.shutdown();
-    if (global.agiServer) {
-        await global.agiServer.stop();
-    }
+    // AGI server cleanup removed - no longer needed
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     logger.info('🔄 Received SIGTERM, shutting down gracefully...');
     await stasisManager.shutdown();
-    if (global.agiServer) {
-        await global.agiServer.stop();
-    }
+    // AGI server cleanup removed - no longer needed
     process.exit(0);
 });
 

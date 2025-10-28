@@ -7,7 +7,7 @@ services:
     container_name: ai_dialer_server
     ports:
       - "3000:3000"
-      - "4573:4573"  # FastAGI port for Asterisk
+      # Port 4573 removed - AGI server no longer needed (using Telnyx webhooks)
     environment:
       # Database
       - DB_HOST=postgres
@@ -30,33 +30,35 @@ services:
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
       - JWT_EXPIRES_IN=24h
 
-      # Asterisk ARI
+      # Asterisk ARI (still needed for manual browser phone calls)
       - ARI_URL=http://asterisk:8088/ari
       - ARI_USERNAME=ai-dialer
       - ARI_PASSWORD=ai-dialer-password
 
-      # FastAGI Configuration (for AI automated calls)
-      - AGI_HOST=ai_dialer
-      - AGI_PORT=4573
+      # FastAGI removed - automated calls now use Telnyx Call Control API
 
       # Asterisk WebRTC Configuration
       - ASTERISK_HOST=localhost
       - ASTERISK_WS_PORT=8088
 
+      # Telnyx Call Control API (for automated AI calls)
+      # ⚡ REQUIRED: Get your API key from portal.telnyx.com
+      - TELNYX_API_KEY=KEY0199FFA0EB5D4947F9F3CD455BE32997
+      - TELNYX_CONNECTION_ID=2811216964129653991
+      - TELNYX_PHONE_NUMBER=+18058690081
+      - TELNYX_DID=+18058690081
+
       # Telnyx WebRTC Configuration (for browser-based manual calls)
-      # ⚡ REQUIRED: Update these with your actual Telnyx credentials
       - TELNYX_SIP_USERNAME=userinfo63399
       - TELNYX_SIP_PASSWORD=-WUgqhX.ZXYM
       - TELNYX_CALLER_ID=+18058690081
-      - TELNYX_PHONE_NUMBER=+18058690081
       - TELNYX_DOMAIN=sip.telnyx.com
 
-      # Telnyx Legacy (for Asterisk automated calls)
+      # Telnyx Legacy (kept for backward compatibility)
       - TELNYX_USERNAME=info@pitchnhire.com
       - TELNYX_PASSWORD=DxZU$m4#GuFhRTp
       - TELNYX_SIP_URI=sip:info@pitchnhire.com@sip.telnyx.com
       - TELNYX_IP_RANGE=66.109.0.0/16
-      - TELNYX_DID=+18058690081
       - TELNYX_TIMEOUT=30
 
       # Voice Stack

@@ -108,23 +108,19 @@ router.post('/process', async(req, res) => {
             }
         });
 
-        // Query knowledge base for FAQ answers
-        const keywords = user_input.toLowerCase().split(' ').filter(word => word.length > 2);
-        const knowledgeResult = await query(`
-            SELECT question, answer, confidence, category
-            FROM knowledge_entries
-            WHERE organization_id = $1 AND is_active = true
-            AND (
-                LOWER(question) LIKE ANY($2) OR
-                LOWER(answer) LIKE ANY($3)
-            )
-            ORDER BY confidence DESC
-            LIMIT 5
-        `, [
+        // Query knowledge base for FAQ answers (ENHANCED VERSION)
+        const enhancedKnowledge = require('../services/enhanced-knowledge');
+        const knowledgeResults = await enhancedKnowledge.queryKnowledge(
+            user_input,
             req.organizationId,
-            keywords.map(k => `%${k}%`),
-            keywords.map(k => `%${k}%`)
-        ]);
+            context?.campaign_id,
+            context?.conversation_history
+        );
+
+        // Convert to old format for compatibility with existing code
+        const knowledgeResult = {
+            rows: knowledgeResults || []
+        };
 
         // Analyze user intent and emotion using enhanced engine
         const intentAnalysis = conversationEngine.analyzeIntent(user_input, conversationHistory);

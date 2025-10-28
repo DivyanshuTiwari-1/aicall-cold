@@ -1,12 +1,13 @@
 const AriClient = require('ari-client');
 const logger = require('../../utils/logger');
-const AiDialerStasisApp = require('./ai-dialer-app');
+// AI Dialer app removed - automated calls now use Telnyx Call Control API directly
+// const AiDialerStasisApp = require('./ai-dialer-app');
 const ManualBridgeStasisApp = require('./manual-bridge-app');
 
 class StasisAppManager {
     constructor() {
         this.ari = null;
-        this.aiDialerApp = null;
+        // aiDialerApp removed - automated calls now use Telnyx webhooks
         this.manualBridgeApp = null;
         this.isConnected = false;
         this.reconnectAttempts = 0;
@@ -64,17 +65,17 @@ class StasisAppManager {
                 throw new Error('ARI client not connected');
             }
 
-            // Register AI Dialer Stasis App
-            this.aiDialerApp = new AiDialerStasisApp(this.ari);
-            logger.info('✅ AI Dialer Stasis App registered');
+            // AI Dialer app removed - automated calls now use Telnyx Call Control API
+            // Only register Manual Bridge app for agent browser phone functionality
 
             // Register Manual Bridge Stasis App
             this.manualBridgeApp = new ManualBridgeStasisApp(this.ari);
-            logger.info('✅ Manual Bridge Stasis App registered');
+            logger.info('✅ Manual Bridge Stasis App registered (for browser phone)');
 
-            // Start the ARI client
-            await this.ari.start('ai-dialer-stasis', 'manual-dialer-bridge-stasis');
-            logger.info('✅ Stasis applications started');
+            // Start the ARI client - only manual-dialer-bridge-stasis app
+            await this.ari.start('manual-dialer-bridge-stasis');
+            logger.info('✅ Stasis application started (manual calls only)');
+            logger.info('ℹ️  Note: Automated AI calls now use Telnyx webhooks instead of Stasis');
 
         } catch (error) {
             logger.error('❌ Failed to register Stasis apps:', error);
@@ -149,9 +150,7 @@ class StasisAppManager {
         return this.ari;
     }
 
-    getAiDialerApp() {
-        return this.aiDialerApp;
-    }
+    // getAiDialerApp removed - no longer used
 
     getManualBridgeApp() {
         return this.manualBridgeApp;
@@ -162,13 +161,12 @@ class StasisAppManager {
     }
 
     getActiveCalls() {
-        const aiCalls = this.aiDialerApp ? this.aiDialerApp.getActiveCalls() : [];
+        // AI calls no longer tracked here - they're handled via Telnyx webhooks
         const manualCalls = this.manualBridgeApp ? this.manualBridgeApp.getActiveBridges() : [];
 
         return {
-            aiCalls,
             manualCalls,
-            total: aiCalls.length + manualCalls.length
+            total: manualCalls.length
         };
     }
 
@@ -205,4 +203,3 @@ class StasisAppManager {
 const stasisManager = new StasisAppManager();
 
 module.exports = stasisManager;
-
