@@ -47,6 +47,7 @@ const addSipFields = require('./scripts/migrations/add-sip-fields');
 const addTranscriptField = require('./scripts/migrations/add-transcript-field');
 const addPhoneNumberFields = require('./scripts/migrations/add-phone-number-fields');
 const addCallStatusFields = require('./scripts/migrations/add-call-status-fields');
+const addPriorityField = require('./scripts/migrations/add-priority-field');
 
 const app = express();
 const server = createServer(app);
@@ -322,6 +323,7 @@ async function startServer() {
         await addTranscriptField();
         await addPhoneNumberFields();
         await addCallStatusFields();
+        await addPriorityField();
 
         // Asterisk/Stasis removed - all calls now use Telnyx (automated & manual via WebRTC)
         logger.info('✅ Asterisk/ARI removed - using Telnyx for all call types');

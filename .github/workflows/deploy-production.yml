@@ -54,22 +54,22 @@ jobs:
           command_timeout: 20m
           script: |
             set -e
-            
+
             # Application directory
             APP_DIR="$HOME/aicall"
             echo "📂 Navigating to: $APP_DIR"
             cd "$APP_DIR"
-            
+
             # Pull latest code and detect changes
             echo "📥 Pulling latest code..."
             BEFORE_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "init")
             git fetch origin
             git reset --hard origin/main
             AFTER_COMMIT=$(git rev-parse HEAD)
-            
+
             echo "✓ Code updated to: $(git log --oneline -1)"
             echo ""
-            
+
             # Detect what changed
             if [ "$BEFORE_COMMIT" != "init" ]; then
               CHANGED_FILES=$(git diff --name-only $BEFORE_COMMIT $AFTER_COMMIT)
@@ -80,50 +80,50 @@ jobs:
               CHANGED_FILES="all"
               echo "📝 Initial deployment - all files"
             fi
-            
+
             # Check if we need to rebuild (dependency changes)
             REBUILD_FRONTEND=false
             REBUILD_BACKEND=false
-            
+
             if echo "$CHANGED_FILES" | grep -q "client/package.json\|client/Dockerfile"; then
                 REBUILD_FRONTEND=true
                 echo "🔨 Frontend rebuild needed (dependencies changed)"
             elif echo "$CHANGED_FILES" | grep -q "^client/"; then
                 echo "📝 Frontend code changes detected (no rebuild needed)"
             fi
-            
+
             if echo "$CHANGED_FILES" | grep -q "server/package.json\|server/Dockerfile"; then
                 REBUILD_BACKEND=true
                 echo "🔨 Backend rebuild needed (dependencies changed)"
             elif echo "$CHANGED_FILES" | grep -q "^server/"; then
                 echo "📝 Backend code changes detected (no rebuild needed)"
             fi
-            
+
             echo ""
-            
+
             # Rebuild only if dependencies changed
             if [ "$REBUILD_FRONTEND" = true ] || [ "$REBUILD_BACKEND" = true ]; then
                 echo "🔨 Rebuilding changed services..."
-                
+
                 SERVICES_TO_BUILD=""
                 [ "$REBUILD_FRONTEND" = true ] && SERVICES_TO_BUILD="$SERVICES_TO_BUILD frontend"
                 [ "$REBUILD_BACKEND" = true ] && SERVICES_TO_BUILD="$SERVICES_TO_BUILD backend"
-                
+
                 echo "   📦 Building: $SERVICES_TO_BUILD"
                 docker compose build $SERVICES_TO_BUILD
                 echo "✅ Build complete"
                 echo ""
             fi
-            
+
             # Always restart containers to pick up changes
             echo "🔄 Restarting services..."
             docker compose down
             docker compose up -d
-            
+
             echo ""
             echo "⏳ Waiting for services to be healthy..."
             sleep 10
-            
+
             # Wait for backend to be healthy
             MAX_TRIES=30
             for i in $(seq 1 $MAX_TRIES); do
@@ -136,11 +136,11 @@ jobs:
               fi
               sleep 2
             done
-            
+
             echo ""
             echo "🧹 Cleaning up old images..."
             docker image prune -f
-            
+
             echo ""
             echo "✅ Deployment completed successfully!"
             echo "🎉 Production is now running the latest code"
@@ -155,13 +155,13 @@ jobs:
           port: 22
           script: |
             cd "$HOME/aicall"
-            
+
             echo "📊 Service Status:"
             docker compose ps
-            
+
             echo ""
             echo "🔍 Testing endpoints..."
-            
+
             # Test backend health
             if curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
               echo "✅ Backend health check passed"
@@ -169,25 +169,25 @@ jobs:
             else
               echo "⚠️  Backend health check failed"
             fi
-            
+
             # Test frontend
             if curl -k -f -s https://localhost > /dev/null 2>&1; then
               echo "✅ Frontend is accessible"
             else
               echo "⚠️  Frontend check failed"
             fi
-            
+
             # Test domain
             if curl -k -f -s https://atsservice.site > /dev/null 2>&1; then
               echo "✅ Domain (atsservice.site) is accessible"
             else
               echo "⚠️  Domain check failed"
             fi
-            
+
             echo ""
             echo "💾 Disk space:"
             df -h / | grep -E 'Filesystem|/$'
-            
+
             echo ""
             echo "🐳 Container resource usage:"
             docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"

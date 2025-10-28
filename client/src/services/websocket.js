@@ -94,8 +94,8 @@ class WebSocketService extends EventEmitter {
       return `${protocol}//${host}:${port}`;
     }
 
-    // For production, use the same host
-    return `${protocol}//${window.location.host}`;
+    // For production, use the same host with /ws path for nginx proxy
+    return `${protocol}//${window.location.host}/ws`;
   }
 
   /**
