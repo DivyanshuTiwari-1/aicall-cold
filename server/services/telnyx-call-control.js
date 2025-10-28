@@ -41,7 +41,7 @@ class TelnyxCallControl {
             // Encode metadata as base64 for client_state
             const clientState = Buffer.from(JSON.stringify(metadata)).toString('base64');
 
-            logger.info(`📞 Initiating Telnyx call: ${callId} to ${contact.phone}`);
+            logger.info(`📞 [TELNYX] Initiating call: ${callId} to ${contact.phone}`);
 
             // Create call via Telnyx Call Control API using axios
             const response = await axios.post('https://api.telnyx.com/v2/calls', {
@@ -51,7 +51,19 @@ class TelnyxCallControl {
                 webhook_url: this.webhookUrl,
                 webhook_url_method: 'POST',
                 client_state: clientState,
-                timeout_secs: 30
+                timeout_secs: 30,
+                // Enable answering machine detection to avoid calling voicemail
+                answering_machine_detection: 'detect',
+                answering_machine_detection_config: {
+                    after_greeting_silence_millis: 1000,
+                    between_words_silence_millis: 1000,
+                    greeting_duration_millis: 5000,
+                    initial_silence_millis: 4000,
+                    maximum_number_of_words: 5,
+                    maximum_word_length_millis: 5000,
+                    silence_threshold: 256,
+                    total_analysis_time_millis: 5000
+                }
             }, {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
@@ -60,7 +72,10 @@ class TelnyxCallControl {
             });
 
             const call = response.data.data;
-            logger.info(`✅ Telnyx call created: ${call.call_control_id}`);
+            logger.info(`✅ [TELNYX] Call created successfully`);
+            logger.info(`   Call Control ID: ${call.call_control_id}`);
+            logger.info(`   From: ${fromNumber || this.phoneNumber} → To: ${contact.phone}`);
+            logger.info(`   Call ID (DB): ${callId}`);
 
             return {
                 success: true,
@@ -70,7 +85,10 @@ class TelnyxCallControl {
             };
 
         } catch (error) {
-            logger.error(`❌ Failed to initiate Telnyx call for ${contact.phone}:`, error.message);
+            logger.error(`❌ [TELNYX] Failed to initiate call for ${contact.phone}:`, error.message);
+            if (error.response) {
+                logger.error(`   Telnyx API Error: ${JSON.stringify(error.response.data)}`);
+            }
             throw error;
         }
     }
@@ -82,16 +100,19 @@ class TelnyxCallControl {
      */
     async playAudio(callControlId, audioUrl) {
         try {
+            logger.info(`🔊 [TELNYX] Playing audio to call ${callControlId}`);
+            logger.info(`   Audio URL: ${audioUrl}`);
+
             await telnyx.calls.playback_start(callControlId, {
                 audio_url: audioUrl,
                 overlay: false
             });
 
-            logger.info(`🔊 Playing audio to call ${callControlId}`);
+            logger.info(`✅ [TELNYX] Audio playback started successfully`);
             return { success: true };
 
         } catch (error) {
-            logger.error(`❌ Failed to play audio on call ${callControlId}:`, error.message);
+            logger.error(`❌ [TELNYX] Failed to play audio on call ${callControlId}:`, error.message);
             throw error;
         }
     }

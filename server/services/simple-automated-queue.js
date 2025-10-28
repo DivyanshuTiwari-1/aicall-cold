@@ -12,7 +12,8 @@ const WebSocketBroadcaster = require('./websocket-broadcaster');
 class SimpleAutomatedQueue {
     constructor() {
         this.activeQueues = new Map(); // campaignId -> queue state
-        this.callDelay = 5000; // 5 seconds between calls
+        this.activeCalls = new Map(); // campaignId -> current active call info
+        this.callDelay = 5000; // 5 seconds between calls (AFTER completion)
     }
 
     /**
@@ -101,24 +102,36 @@ class SimpleAutomatedQueue {
         const queueState = this.activeQueues.get(campaignId);
 
         if (!queueState || queueState.status !== 'running') {
+            logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Queue not running, stopping processing`);
+            return;
+        }
+
+        // Check if there's already an active call for this campaign
+        if (this.activeCalls.has(campaignId)) {
+            logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Active call in progress, waiting for completion`);
             return;
         }
 
         try {
+            logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Processing next contact...`);
+
             // Get next contact
             const contact = await this.getNextContact(campaignId);
 
             if (!contact) {
-                logger.info(`No more contacts available for campaign ${campaignId}`);
+                logger.info(`✅ [QUEUE] Campaign ${campaignId}: No more contacts available`);
+                logger.info(`📊 [QUEUE] Final Stats - Processed: ${queueState.processedContacts}, Success: ${queueState.successfulCalls}, Failed: ${queueState.failedCalls}`);
                 await this.stopQueue(campaignId);
                 return;
             }
+
+            logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Found contact ${contact.id} - ${contact.first_name} ${contact.last_name} (${contact.phone})`);
 
             // Check DNC list
             const isOnDNC = await this.checkDNC(contact.phone, queueState.organizationId);
 
             if (isOnDNC) {
-                logger.warn(`⚠️  Contact ${contact.id} is on DNC list, skipping`);
+                logger.warn(`⚠️  [QUEUE] Contact ${contact.id} is on DNC list, skipping`);
 
                 // Mark contact as DNC
                 await query(`
@@ -129,24 +142,39 @@ class SimpleAutomatedQueue {
 
                 queueState.processedContacts++;
 
-                // Move to next contact immediately
-                setTimeout(() => this.processNextContact(campaignId), 1000);
+                // Move to next contact immediately (no delay for skipped contacts)
+                logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Moving to next contact immediately`);
+                setImmediate(() => this.processNextContact(campaignId));
                 return;
             }
 
             // Initiate call
-            await this.initiateCall(contact, queueState);
+            const callResult = await this.initiateCall(contact, queueState);
 
             queueState.processedContacts++;
 
-            // Schedule next contact processing after delay
-            setTimeout(() => this.processNextContact(campaignId), this.callDelay);
+            // Track active call - will be cleared by onCallCompleted
+            this.activeCalls.set(campaignId, {
+                callId: callResult.callId,
+                contactId: contact.id,
+                startTime: new Date()
+            });
+
+            logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Call initiated, waiting for completion...`);
+            logger.info(`📊 [QUEUE] Progress: ${queueState.processedContacts}/${queueState.totalContacts} (${Math.round(queueState.processedContacts / queueState.totalContacts * 100)}%)`);
+
+            // NOTE: Do NOT schedule next contact here!
+            // Next contact will be processed when onCallCompleted() is called from webhook
 
         } catch (error) {
-            logger.error(`Error processing contact for campaign ${campaignId}:`, error);
+            logger.error(`❌ [QUEUE] Campaign ${campaignId}: Error processing contact:`, error);
             queueState.failedCalls++;
 
-            // Continue with next contact after delay
+            // Clear active call if it was set
+            this.activeCalls.delete(campaignId);
+
+            // Continue with next contact after delay even on error
+            logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Scheduling next contact after error (${this.callDelay}ms delay)`);
             setTimeout(() => this.processNextContact(campaignId), this.callDelay);
         }
     }
@@ -217,6 +245,11 @@ class SimpleAutomatedQueue {
         const callId = uuidv4();
 
         try {
+            logger.info(`📞 [CALL] ${callId}: Creating call record in database`);
+            logger.info(`   Contact: ${contact.first_name} ${contact.last_name} (${contact.phone})`);
+            logger.info(`   Campaign: ${queueState.campaignId}`);
+            logger.info(`   From: ${queueState.phoneNumber}`);
+
             // Create call record in database
             await query(`
                 INSERT INTO calls (
@@ -235,6 +268,8 @@ class SimpleAutomatedQueue {
                 contact.phone,
                 0.0 // Will be calculated on call end
             ]);
+
+            logger.info(`✅ [CALL] ${callId}: Database record created`);
 
             // Broadcast call started
             WebSocketBroadcaster.broadcastCallStarted(queueState.organizationId, {
@@ -265,6 +300,7 @@ class SimpleAutomatedQueue {
             ]);
 
             // Initiate call via Telnyx
+            logger.info(`📞 [CALL] ${callId}: Initiating call via Telnyx...`);
             const result = await telnyxCallControl.makeAICall({
                 callId,
                 contact,
@@ -279,11 +315,15 @@ class SimpleAutomatedQueue {
                 WHERE id = $1
             `, [contact.id]);
 
-            logger.info(`✅ Call initiated: ${callId} to ${contact.first_name} ${contact.last_name} (${contact.phone})`);
+            logger.info(`✅ [CALL] ${callId}: Call initiated successfully to ${contact.first_name} ${contact.last_name} (${contact.phone})`);
+            logger.info(`   Telnyx Call Control ID: ${result.callControlId}`);
 
             queueState.successfulCalls++;
 
-            return result;
+            return {
+                ...result,
+                callId // Ensure callId is in the return value
+            };
 
         } catch (error) {
             logger.error(`❌ Failed to initiate call for contact ${contact.id}:`, error);
@@ -303,17 +343,89 @@ class SimpleAutomatedQueue {
     }
 
     /**
+     * Called by webhook when a call completes
+     * This triggers processing of the next contact after configured delay
+     */
+    onCallCompleted(campaignId, callId, outcome) {
+        logger.info(`📞 [QUEUE] Campaign ${campaignId}: Call ${callId} completed with outcome: ${outcome}`);
+
+        const queueState = this.activeQueues.get(campaignId);
+        const activeCall = this.activeCalls.get(campaignId);
+
+        if (!queueState) {
+            logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Queue not found for completed call`);
+            return;
+        }
+
+        if (activeCall) {
+            const callDuration = Math.floor((new Date() - activeCall.startTime) / 1000);
+            logger.info(`📞 [QUEUE] Campaign ${campaignId}: Active call duration: ${callDuration}s`);
+
+            // Clear active call
+            this.activeCalls.delete(campaignId);
+            logger.info(`✅ [QUEUE] Campaign ${campaignId}: Active call cleared`);
+        }
+
+        // Update success/fail counts based on outcome
+        if (outcome === 'completed' || outcome === 'scheduled' || outcome === 'interested' || outcome === 'answered') {
+            // Already incremented in initiateCall
+        } else if (outcome === 'no_answer' || outcome === 'busy' || outcome === 'failed' || outcome === 'voicemail') {
+            queueState.failedCalls++;
+        }
+
+        // Broadcast queue status update
+        WebSocketBroadcaster.broadcastToOrganization(queueState.organizationId, {
+            type: 'queue_status_update',
+            campaignId: campaignId,
+            status: {
+                totalContacts: queueState.totalContacts,
+                processedContacts: queueState.processedContacts,
+                successfulCalls: queueState.successfulCalls,
+                failedCalls: queueState.failedCalls,
+                remainingContacts: queueState.totalContacts - queueState.processedContacts,
+                progress: Math.round((queueState.processedContacts / queueState.totalContacts) * 100)
+            },
+            timestamp: new Date().toISOString()
+        });
+
+        logger.info(`📊 [QUEUE] Campaign ${campaignId}: Stats - ${queueState.successfulCalls} success, ${queueState.failedCalls} failed, ${queueState.totalContacts - queueState.processedContacts} remaining`);
+
+        // Schedule next contact after delay
+        if (queueState.status === 'running') {
+            logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Scheduling next contact in ${this.callDelay}ms...`);
+            setTimeout(() => {
+                logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Delay complete, processing next contact now`);
+                this.processNextContact(campaignId);
+            }, this.callDelay);
+        } else {
+            logger.info(`⏹️  [QUEUE] Campaign ${campaignId}: Queue stopped, not processing next contact`);
+        }
+    }
+
+    /**
      * Get queue status
      */
     getQueueStatus(campaignId) {
-        return this.activeQueues.get(campaignId) || null;
+        const queueState = this.activeQueues.get(campaignId);
+        if (!queueState) return null;
+
+        return {
+            ...queueState,
+            activeCall: this.activeCalls.get(campaignId) || null,
+            remainingContacts: queueState.totalContacts - queueState.processedContacts
+        };
     }
 
     /**
      * Get all active queues
      */
     getAllQueueStatuses() {
-        return Array.from(this.activeQueues.values());
+        return Array.from(this.activeQueues.entries()).map(([campaignId, state]) => ({
+            campaignId,
+            ...state,
+            activeCall: this.activeCalls.get(campaignId) || null,
+            remainingContacts: state.totalContacts - state.processedContacts
+        }));
     }
 }
 

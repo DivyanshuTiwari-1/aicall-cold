@@ -26,6 +26,7 @@ const LiveMonitor = () => {
   const [selectedCall, setSelectedCall] = useState(null);
   const [conversationHistory, setConversationHistory] = useState([]);
   const [isMonitoring, setIsMonitoring] = useState(true);
+  const [callFilter, setCallFilter] = useState('all'); // 'all', 'automated', 'manual'
 
   // Fetch live calls initially (Active Calls)
   const { data: liveCallsData, isLoading, error, refetch } = useQuery({
@@ -130,7 +131,7 @@ const LiveMonitor = () => {
     };
 
     const handleConversationTurn = (data) => {
-      console.log('💬 Conversation turn:', data);
+      console.log('💬 [LIVE-MONITOR] Conversation turn received:', data);
 
       // If this is for the selected call, update conversation in real-time
       if (selectedCall?.id === data.callId || selectedCall?.id === data.call_id) {
@@ -171,16 +172,24 @@ const LiveMonitor = () => {
       refetch();
     };
 
+    const handleQueueStatusUpdate = (data) => {
+      console.log('📊 [LIVE-MONITOR] Queue status update:', data);
+      // Refresh calls list to show updated queue progress
+      refetch();
+    };
+
     // Subscribe to organization updates
     addListener('call_status_update', handleCallUpdate);
     addListener('call_started', handleCallStart);
     addListener('call_ended', handleCallEnd);
     addListener('conversation_turn', handleConversationTurn);
+    addListener('queue_status_update', handleQueueStatusUpdate);
 
     // Subscribe to organization WebSocket channel
     if (user?.organizationId) {
       const ws = require('../services/websocket').default;
       ws.subscribeToOrganizationUpdates(user.organizationId);
+      console.log('✅ [LIVE-MONITOR] Subscribed to organization updates:', user.organizationId);
     }
 
     return () => {
@@ -346,6 +355,11 @@ const LiveMonitor = () => {
   };
 
   const liveCalls = liveCallsData?.liveCalls || [];
+  const filteredCalls = liveCalls.filter(call => {
+    if (callFilter === 'automated') return call.automated;
+    if (callFilter === 'manual') return !call.automated;
+    return true; // 'all'
+  });
 
   if (isLoading) return <LoadingSpinner />;
   if (error) {
@@ -484,16 +498,50 @@ const LiveMonitor = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left: Active Calls */}
           <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <PhoneIcon className="h-5 w-5 text-green-500 mr-2" />
-              Active Calls ({liveCalls.length})
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <PhoneIcon className="h-5 w-5 text-green-500 mr-2" />
+                Active Calls ({filteredCalls.length}{callFilter !== 'all' && ` of ${liveCalls.length}`})
+              </h3>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCallFilter('all')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    callFilter === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  All ({liveCalls.length})
+                </button>
+                <button
+                  onClick={() => setCallFilter('automated')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    callFilter === 'automated'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  🤖 Automated ({liveCalls.filter(c => c.automated).length})
+                </button>
+                <button
+                  onClick={() => setCallFilter('manual')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    callFilter === 'manual'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Manual ({liveCalls.filter(c => !c.automated).length})
+                </button>
+              </div>
+            </div>
 
-          {liveCalls.length === 0 ? (
+          {filteredCalls.length === 0 ? (
             <EmptyState />
           ) : (
             <div className="space-y-4">
-              {liveCalls.map((call) => (
+              {filteredCalls.map((call) => (
                 <div
                   key={call.id}
                   className={`p-4 border rounded-lg cursor-pointer transition-colors ${

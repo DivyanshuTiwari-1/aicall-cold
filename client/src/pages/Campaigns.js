@@ -1,23 +1,28 @@
 import {
-    ChartBarIcon,
-    ClockIcon,
-    PhoneIcon,
-    PlayIcon,
-    PlusIcon,
-    StopIcon,
-    UserGroupIcon
+  ChartBarIcon,
+  ClockIcon,
+  PhoneIcon,
+  PlayIcon,
+  PlusIcon,
+  StopIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import CreateCampaignModal from '../components/CreateCampaignModal';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../contexts/AuthContext';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { callsAPI } from '../services/calls';
 import campaignsAPI from '../services/campaigns';
 import phoneNumbersAPI from '../services/phoneNumbers';
 
 const Campaigns = () => {
     const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const { isConnected, addListener } = useWebSocket();
+    const [queueStatuses, setQueueStatuses] = React.useState({});
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showPhoneSelector, setShowPhoneSelector] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState(null);
@@ -70,6 +75,67 @@ const Campaigns = () => {
         },
     });
 
+    // WebSocket listeners for real-time queue updates
+    useEffect(() => {
+        if (!isConnected || !user?.organizationId) return;
+
+        const handleQueueStatusUpdate = (data) => {
+            console.log('📊 [CAMPAIGNS] Queue status update:', data);
+
+            // Update local queue status state
+            setQueueStatuses(prev => ({
+                ...prev,
+                [data.campaignId]: data.status
+            }));
+
+            // Refresh campaigns data
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+        };
+
+        const handleCallStarted = (data) => {
+            console.log('📞 [CAMPAIGNS] Call started:', data);
+            queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+        };
+
+        const handleCallEnded = (data) => {
+            console.log('✅ [CAMPAIGNS] Call ended:', data);
+            queryClient.invalidateQueries({ queryKey: ['campaign-stats'] });
+        };
+
+        addListener('queue_status_update', handleQueueStatusUpdate);
+        addListener('call_started', handleCallStarted);
+        addListener('call_ended', handleCallEnded);
+
+        return () => {
+            // Cleanup handled by useWebSocket
+        };
+    }, [isConnected, user?.organizationId, addListener, queryClient]);
+
+    // Fetch initial queue statuses for active campaigns on mount
+    useEffect(() => {
+        const fetchQueueStatuses = async () => {
+            if (!campaigns || campaigns.length === 0) return;
+
+            const activeCampaigns = campaigns.filter(c => c.automatedCallsActive);
+
+            for (const campaign of activeCampaigns) {
+                try {
+                    const statusData = await callsAPI.getQueueStatus(campaign.id);
+                    if (statusData?.status) {
+                        setQueueStatuses(prev => ({
+                            ...prev,
+                            [campaign.id]: statusData.status
+                        }));
+                    }
+                } catch (error) {
+                    console.error(`Failed to fetch queue status for campaign ${campaign.id}:`, error);
+                }
+            }
+        };
+
+        fetchQueueStatuses();
+    }, [campaigns]);
 
     const handleStartAutomatedCalls = (campaignId) => {
         setSelectedCampaign(campaignId);
@@ -222,36 +288,82 @@ const Campaigns = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {campaigns.map((campaign) => (
-                                        <tr key={campaign.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div>
-                                                    <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
-                                                    <div className="text-sm text-gray-500">{campaign.description}</div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                                                    {campaign.type}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                                    campaign.status === 'active'
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : campaign.status === 'paused'
-                                                        ? 'bg-yellow-100 text-yellow-800'
-                                                        : 'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                    {campaign.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {campaign.contactCount || 0}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {campaign.callsMade || 0}
-                                            </td>
+                                    {campaigns.map((campaign) => {
+                                        const queueStatus = queueStatuses[campaign.id];
+                                        const hasActiveQueue = campaign.automatedCallsActive && queueStatus;
+
+                                        return (
+                                            <React.Fragment key={campaign.id}>
+                                                <tr className="hover:bg-gray-50">
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
+                                                            <div className="text-sm text-gray-500">{campaign.description}</div>
+                                                            {hasActiveQueue && (
+                                                                <div className="mt-2">
+                                                                    <div className="flex items-center space-x-2">
+                                                                        <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                                                            <div
+                                                                                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                                                                                style={{ width: `${queueStatus.progress || 0}%` }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className="text-xs font-medium text-gray-700">
+                                                                            {queueStatus.progress || 0}%
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="mt-1 flex items-center space-x-4 text-xs text-gray-600">
+                                                                        <span className="flex items-center">
+                                                                            <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"></span>
+                                                                            {queueStatus.processedContacts || 0}/{queueStatus.totalContacts || 0} processed
+                                                                        </span>
+                                                                        <span className="flex items-center">
+                                                                            <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
+                                                                            {queueStatus.successfulCalls || 0} success
+                                                                        </span>
+                                                                        <span className="flex items-center">
+                                                                            <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1"></span>
+                                                                            {queueStatus.failedCalls || 0} failed
+                                                                        </span>
+                                                                        <span className="flex items-center">
+                                                                            <span className="inline-block w-2 h-2 rounded-full bg-gray-500 mr-1"></span>
+                                                                            {queueStatus.remainingContacts || 0} remaining
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                            {campaign.type}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                                            campaign.status === 'active'
+                                                                ? 'bg-green-100 text-green-800'
+                                                                : campaign.status === 'paused'
+                                                                ? 'bg-yellow-100 text-yellow-800'
+                                                                : 'bg-gray-100 text-gray-800'
+                                                        }`}>
+                                                            {campaign.status}
+                                                        </span>
+                                                        {hasActiveQueue && (
+                                                            <div className="mt-1">
+                                                                <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 animate-pulse">
+                                                                    <span className="w-2 h-2 bg-blue-600 rounded-full mr-1 animate-ping"></span>
+                                                                    Queue Running
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        {campaign.contactCount || 0}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        {campaign.callsMade || 0}
+                                                    </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                                 <div className="flex flex-col space-y-1">
                                                     <div className="flex space-x-2">
@@ -292,7 +404,9 @@ const Campaigns = () => {
                                                 </div>
                                             </td>
                                         </tr>
-                                    ))}
+                                    </React.Fragment>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

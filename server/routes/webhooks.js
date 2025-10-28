@@ -410,7 +410,11 @@ router.post('/telnyx', async (req, res) => {
         // Handle different event types
         switch (eventType) {
             case 'call.initiated':
-                logger.info(`Call initiated: ${callControlId}`);
+                logger.info(`📞 [WEBHOOK] call.initiated received`);
+                logger.info(`   Call Control ID: ${callControlId}`);
+                logger.info(`   Call ID (DB): ${metadata.callId}`);
+                logger.info(`   Contact: ${metadata.contactName}`);
+
                 // Update status to ringing and broadcast
                 if (metadata.callId && metadata.organizationId) {
                     await query(`
@@ -418,6 +422,8 @@ router.post('/telnyx', async (req, res) => {
                         SET status = 'ringing', updated_at = CURRENT_TIMESTAMP
                         WHERE id = $1
                     `, [metadata.callId]);
+
+                    logger.info(`✅ [WEBHOOK] Call status updated to 'ringing'`);
 
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
                         metadata.organizationId,
@@ -429,14 +435,26 @@ router.post('/telnyx', async (req, res) => {
                 break;
 
             case 'call.answered':
-                logger.info(`Call answered: ${callControlId}`);
+                logger.info(`📞 [WEBHOOK] call.answered received`);
+                logger.info(`   Call Control ID: ${callControlId}`);
+                logger.info(`   Call ID (DB): ${metadata.callId}`);
+                logger.info(`   Contact: ${metadata.contactName}`);
+
+                // CRITICAL: Answer the call first before doing anything!
+                const telnyxCallControl = require('../services/telnyx-call-control');
+                logger.info(`📞 [WEBHOOK] Sending answer() command to Telnyx...`);
+                await telnyxCallControl.answerCall(callControlId);
+                logger.info(`✅ [WEBHOOK] Call answered by system`);
+
                 // Update status to connected and broadcast
                 if (metadata.callId && metadata.organizationId) {
                     await query(`
                         UPDATE calls
-                        SET status = 'connected', updated_at = CURRENT_TIMESTAMP
+                        SET status = 'connected', answered = true, updated_at = CURRENT_TIMESTAMP
                         WHERE id = $1
                     `, [metadata.callId]);
+
+                    logger.info(`✅ [WEBHOOK] Call status updated to 'connected'`);
 
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
                         metadata.organizationId,
@@ -445,12 +463,17 @@ router.post('/telnyx', async (req, res) => {
                         { callControlId, message: 'Customer answered!' }
                     );
                 }
-                // Customer answered - start AI conversation
+
+                // Now start AI conversation
+                logger.info(`🤖 [WEBHOOK] Starting AI conversation...`);
                 await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
                 break;
 
             case 'call.playback.ended':
-                logger.info(`Playback ended: ${callControlId}`);
+                logger.info(`🔊 [WEBHOOK] call.playback.ended received`);
+                logger.info(`   Call Control ID: ${callControlId}`);
+                logger.info(`   AI finished speaking, starting to listen...`);
+
                 // Broadcast: AI finished talking, listening for customer
                 if (metadata.callId && metadata.organizationId) {
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
@@ -462,10 +485,14 @@ router.post('/telnyx', async (req, res) => {
                 }
                 // AI finished speaking - start recording customer
                 await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
+                logger.info(`✅ [WEBHOOK] Recording started for customer response`);
                 break;
 
             case 'call.recording.saved':
-                logger.info(`Recording saved: ${callControlId}`);
+                logger.info(`🎙️  [WEBHOOK] call.recording.saved received`);
+                logger.info(`   Call Control ID: ${callControlId}`);
+                logger.info(`   Customer finished speaking, processing...`);
+
                 // Broadcast: Customer finished talking, AI is processing
                 if (metadata.callId && metadata.organizationId) {
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
@@ -479,45 +506,173 @@ router.post('/telnyx', async (req, res) => {
                 const recordingUrl = event.payload?.recording_urls?.wav || event.payload?.public_recording_url;
 
                 if (recordingUrl) {
+                    logger.info(`📥 [WEBHOOK] Recording URL: ${recordingUrl.substring(0, 50)}...`);
                     // Customer finished speaking - transcribe and respond
                     await telnyxAIConversation.handleRecordingSaved(callControlId, recordingUrl, metadata);
+                    logger.info(`✅ [WEBHOOK] Recording processed successfully`);
                 } else {
-                    logger.warn('Recording URL not found in webhook payload');
+                    logger.warn('⚠️  [WEBHOOK] Recording URL not found in webhook payload');
                 }
                 break;
 
             case 'call.hangup':
-                logger.info(`Call hangup: ${callControlId}`);
+                logger.info(`📴 [WEBHOOK] call.hangup received`);
+                logger.info(`   Call Control ID: ${callControlId}`);
+                logger.info(`   Call ID (DB): ${metadata.callId}`);
+                logger.info(`   Hangup Source: ${event.payload?.hangup_source}`);
+
                 const duration = event.payload?.hangup_source ?
-                    Math.floor(event.payload.end_time - event.payload.start_time) :
+                    Math.floor((event.payload.end_time - event.payload.start_time) / 1000) :
                     0;
 
+                logger.info(`   Duration: ${duration}s`);
+
                 // Call ended - save transcript and update database
+                logger.info(`📝 [WEBHOOK] Processing call completion...`);
                 await telnyxAIConversation.handleCallEnded(callControlId, metadata, duration);
+
+                // CRITICAL: Notify queue that call completed so next contact can be processed
+                if (metadata.campaignId && metadata.automated) {
+                    logger.info(`🎯 [WEBHOOK] Notifying queue of call completion...`);
+                    logger.info(`   Campaign ID: ${metadata.campaignId}`);
+
+                    // Get final call outcome from database
+                    const callOutcomeResult = await query(`
+                        SELECT outcome FROM calls WHERE id = $1
+                    `, [metadata.callId]);
+
+                    const outcome = callOutcomeResult.rows[0]?.outcome || 'completed';
+                    logger.info(`   Final Outcome: ${outcome}`);
+
+                    // Import and notify queue
+                    const simpleQueue = require('../services/simple-automated-queue');
+                    simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, outcome);
+                    logger.info(`✅ [WEBHOOK] Queue notified of completion`);
+                }
                 break;
 
             case 'call.machine.detection.ended':
                 // Answering machine detection completed
-                logger.info(`Machine detection: ${event.payload?.result}`);
+                logger.info(`🤖 [WEBHOOK] call.machine.detection.ended received`);
+                logger.info(`   Result: ${event.payload?.result}`);
+                logger.info(`   Call Control ID: ${callControlId}`);
 
                 if (event.payload?.result === 'human') {
+                    logger.info(`✅ [WEBHOOK] Human detected, treating as answered call`);
                     // Human answered, treat as call.answered
+                    const telnyxCallControl2 = require('../services/telnyx-call-control');
+                    await telnyxCallControl2.answerCall(callControlId);
                     await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
                 } else {
+                    logger.info(`📞 [WEBHOOK] Machine/voicemail detected, hanging up`);
                     // Machine/voicemail detected, hangup
-                    const telnyxCallControl = require('../services/telnyx-call-control');
-                    await telnyxCallControl.hangupCall(callControlId);
+                    const telnyxCallControl2 = require('../services/telnyx-call-control');
+                    await telnyxCallControl2.hangupCall(callControlId);
+
+                    // Update call outcome
+                    if (metadata.callId) {
+                        await query(`
+                            UPDATE calls
+                            SET status = 'completed', outcome = 'voicemail', updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [metadata.callId]);
+
+                        // Notify queue
+                        if (metadata.campaignId && metadata.automated) {
+                            const simpleQueue = require('../services/simple-automated-queue');
+                            simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'voicemail');
+                        }
+                    }
                 }
                 break;
 
             case 'call.speak.ended':
                 // Similar to playback.ended but for TTS via Telnyx
-                logger.info(`Speak ended: ${callControlId}`);
+                logger.info(`🗣️  [WEBHOOK] call.speak.ended received`);
+                logger.info(`   Call Control ID: ${callControlId}`);
                 await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
                 break;
 
+            case 'call.initiated.timeout':
+                // Call timeout - customer didn't answer within timeout_secs
+                logger.warn(`⏱️  [WEBHOOK] call.initiated.timeout received`);
+                logger.warn(`   Call Control ID: ${callControlId}`);
+                logger.warn(`   Call ID (DB): ${metadata.callId}`);
+                logger.warn(`   Call timed out - no answer`);
+
+                if (metadata.callId) {
+                    await query(`
+                        UPDATE calls
+                        SET status = 'completed', outcome = 'no_answer', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [metadata.callId]);
+
+                    await query(`
+                        UPDATE contacts
+                        SET status = 'contacted', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $2
+                    `, [metadata.contactId]);
+
+                    logger.info(`✅ [WEBHOOK] Call marked as no_answer`);
+
+                    WebSocketBroadcaster.broadcastCallEnded(
+                        metadata.organizationId,
+                        metadata.callId,
+                        { outcome: 'no_answer', duration: 0 }
+                    );
+
+                    // Notify queue
+                    if (metadata.campaignId && metadata.automated) {
+                        const simpleQueue = require('../services/simple-automated-queue');
+                        simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'no_answer');
+                        logger.info(`✅ [WEBHOOK] Queue notified of timeout`);
+                    }
+                }
+                break;
+
+            case 'call.failed':
+                // Call failed to establish (network error, invalid number, etc.)
+                logger.error(`❌ [WEBHOOK] call.failed received`);
+                logger.error(`   Call Control ID: ${callControlId}`);
+                logger.error(`   Call ID (DB): ${metadata.callId}`);
+                logger.error(`   Failure Reason: ${event.payload?.hangup_cause || 'Unknown'}`);
+
+                if (metadata.callId) {
+                    await query(`
+                        UPDATE calls
+                        SET status = 'failed',
+                            outcome = 'failed',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [metadata.callId]);
+
+                    logger.info(`✅ [WEBHOOK] Call marked as failed in database`);
+
+                    // Broadcast failure
+                    if (metadata.organizationId) {
+                        WebSocketBroadcaster.broadcastCallStatusUpdate(
+                            metadata.organizationId,
+                            metadata.callId,
+                            'failed',
+                            {
+                                callControlId,
+                                message: 'Call failed',
+                                reason: event.payload?.hangup_cause
+                            }
+                        );
+                    }
+
+                    // Notify queue to move to next contact
+                    if (metadata.campaignId && metadata.automated) {
+                        const simpleQueue = require('../services/simple-automated-queue');
+                        simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'failed');
+                        logger.info(`✅ [WEBHOOK] Queue notified of call failure`);
+                    }
+                }
+                break;
+
             default:
-                logger.info(`Unhandled Telnyx event type: ${eventType}`);
+                logger.info(`ℹ️  [WEBHOOK] Unhandled Telnyx event type: ${eventType}`);
         }
 
         // Always respond 200 OK to Telnyx

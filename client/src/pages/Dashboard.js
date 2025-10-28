@@ -58,33 +58,63 @@ const Dashboard = () => {
   useEffect(() => {
     if (!isConnected || !user?.organizationId) return;
 
+    console.log('✅ [DASHBOARD] WebSocket connected, setting up listeners');
+
     const handleCallUpdate = (data) => {
+      console.log('📞 [DASHBOARD] Call update received:', data);
       // Refresh dashboard data when call status changes
+      queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+    };
+
+    const handleCallStarted = (data) => {
+      console.log('📞 [DASHBOARD] Call started:', data);
+      queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+    };
+
+    const handleCallEnded = (data) => {
+      console.log('✅ [DASHBOARD] Call ended:', data);
+      queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['live-calls'] });
+    };
+
+    const handleQueueStatusUpdate = (data) => {
+      console.log('📊 [DASHBOARD] Queue status update:', data);
       queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
     };
 
     const handleAgentUpdate = (data) => {
+      console.log('👤 [DASHBOARD] Agent update:', data);
       // Refresh dashboard data when agent status changes
       queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
     };
 
     const handleOrganizationUpdate = (data) => {
+      console.log('🏢 [DASHBOARD] Organization update:', data);
       // Refresh dashboard data when organization data changes
       queryClient.invalidateQueries({ queryKey: ['dashboard-analytics'] });
       queryClient.invalidateQueries({ queryKey: ['productivity'] });
     };
 
     const handleLeadAssignment = (data) => {
+      console.log('📋 [DASHBOARD] Lead assignment:', data);
       queryClient.invalidateQueries({ queryKey: ['productivity'] });
     };
 
     addListener('call_status_update', handleCallUpdate);
+    addListener('call_started', handleCallStarted);
+    addListener('call_ended', handleCallEnded);
     addListener('call_completed', handleCallUpdate);
+    addListener('queue_status_update', handleQueueStatusUpdate);
     addListener('agent_status_change', handleAgentUpdate);
     addListener('organization_update', handleOrganizationUpdate);
     addListener('new_lead_assigned', handleLeadAssignment);
 
+    console.log('✅ [DASHBOARD] All WebSocket listeners registered');
+
     return () => {
+      console.log('🔴 [DASHBOARD] Cleaning up WebSocket listeners');
       // Cleanup listeners when component unmounts
     };
   }, [isConnected, user?.organizationId, addListener, queryClient]);

@@ -913,8 +913,16 @@ router.get('/queue/status/:campaignId', authenticateToken, requireRole('admin', 
 
         // Get queue status from the queue service
         try {
-            const { callQueue } = require('../services/queue');
-            const status = callQueue.getQueueStatus(campaignId);
+            const simpleQueue = require('../services/simple-automated-queue');
+            const status = simpleQueue.getQueueStatus(campaignId);
+
+            logger.info(`📊 [API] Queue status request for campaign ${campaignId}`);
+
+            if (status) {
+                logger.info(`   Status: ${status.status}`);
+                logger.info(`   Progress: ${status.processedContacts}/${status.totalContacts}`);
+                logger.info(`   Success: ${status.successfulCalls}, Failed: ${status.failedCalls}`);
+            }
 
             res.json({
                 success: true,
@@ -922,7 +930,7 @@ router.get('/queue/status/:campaignId', authenticateToken, requireRole('admin', 
                 status: status
             });
         } catch (queueError) {
-            logger.error('Queue status error:', queueError);
+            logger.error('❌ [API] Queue status error:', queueError);
             res.status(500).json({
                 success: false,
                 message: 'Failed to get queue status'

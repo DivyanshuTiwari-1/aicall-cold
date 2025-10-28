@@ -27,7 +27,10 @@ class TelnyxAIConversation {
         const { callId, campaignId, organizationId, contactId } = metadata;
 
         try {
-            logger.info(`📞 Call answered: ${callId}, starting AI conversation`);
+            logger.info(`🤖 [AI-CONVERSATION] Call answered: ${callId}`);
+            logger.info(`   Starting AI conversation...`);
+            logger.info(`   Contact ID: ${contactId}`);
+            logger.info(`   Campaign ID: ${campaignId}`);
 
             // Update call status
             await query(`
@@ -35,6 +38,8 @@ class TelnyxAIConversation {
                 SET status = 'in_progress', updated_at = CURRENT_TIMESTAMP
                 WHERE id = $1
             `, [callId]);
+
+            logger.info(`✅ [AI-CONVERSATION] Call status updated to in_progress`);
 
             // Broadcast status update
             WebSocketBroadcaster.broadcastToOrganization(organizationId, {
@@ -55,8 +60,13 @@ class TelnyxAIConversation {
                 conversationHistory: []
             });
 
+            logger.info(`🤖 [AI-CONVERSATION] Conversation state initialized`);
+
             // Get initial greeting from conversation engine
+            logger.info(`🤖 [AI-CONVERSATION] Getting initial greeting...`);
             const greeting = await this.getAIResponse(callId, 'initial_greeting', campaignId, 0);
+            logger.info(`💬 [AI-CONVERSATION] Turn 0 (Greeting): "${greeting.answer}"`);
+
 
             // Store greeting turn
             await this.storeConversationTurn(callId, organizationId, null, greeting.answer, 1, {
@@ -66,18 +76,21 @@ class TelnyxAIConversation {
             });
 
             // Generate TTS audio
+            logger.info(`🎤 [AI-CONVERSATION] Generating TTS for greeting...`);
             const audioUrl = await this.generateTTS(greeting.answer);
+            logger.info(`✅ [AI-CONVERSATION] TTS generated: ${audioUrl.substring(0, 50)}...`);
 
             // Play to customer
+            logger.info(`🔊 [AI-CONVERSATION] Playing greeting to customer...`);
             await telnyxCallControl.playAudio(callControlId, audioUrl);
-
-            logger.info(`🎤 AI greeting played to customer`);
+            logger.info(`✅ [AI-CONVERSATION] Greeting playback started`);
 
         } catch (error) {
-            logger.error(`❌ Error handling call answered for ${callId}:`, error);
+            logger.error(`❌ [AI-CONVERSATION] Error handling call answered for ${callId}:`, error);
+            logger.error(`   Error details: ${error.message}`);
             // Try to hangup gracefully
             await telnyxCallControl.hangupCall(callControlId).catch(err => {
-                logger.error('Failed to hangup after error:', err);
+                logger.error('❌ [AI-CONVERSATION] Failed to hangup after error:', err);
             });
         }
     }
@@ -120,30 +133,36 @@ class TelnyxAIConversation {
         const { callId, campaignId, organizationId } = metadata;
 
         try {
-            logger.info(`📼 Recording saved for call ${callId}, processing...`);
+            logger.info(`📼 [AI-CONVERSATION] Recording saved for call ${callId}`);
+            logger.info(`   Processing customer response...`);
 
             const state = this.conversationStates.get(callId);
 
             if (!state) {
-                logger.warn(`No conversation state found for call ${callId}`);
+                logger.warn(`⚠️  [AI-CONVERSATION] No conversation state found for call ${callId}`);
                 return;
             }
 
             // Download recording from Telnyx
+            logger.info(`📥 [AI-CONVERSATION] Downloading recording from Telnyx...`);
             const audioData = await telnyxCallControl.downloadRecording(recordingUrl);
+            logger.info(`✅ [AI-CONVERSATION] Recording downloaded (${audioData.length} bytes)`);
 
             // Save temporarily
             const tempPath = path.join('/tmp', `recording_${callId}_${Date.now()}.wav`);
             fs.writeFileSync(tempPath, audioData);
+            logger.info(`💾 [AI-CONVERSATION] Saved to temp file: ${tempPath}`);
 
             // Transcribe with Vosk STT
+            logger.info(`🎤 [AI-CONVERSATION] Transcribing audio...`);
             const transcript = await this.transcribeAudio(tempPath);
 
             // Cleanup temp file
             fs.unlinkSync(tempPath);
+            logger.info(`🗑️  [AI-CONVERSATION] Temp file cleaned up`);
 
             if (!transcript || transcript.trim() === '') {
-                logger.info('No speech detected, asking customer to repeat');
+                logger.warn(`⚠️  [AI-CONVERSATION] No speech detected in recording`);
 
                 // Ask customer to repeat
                 const audioUrl = await this.generateTTS("I didn't catch that. Could you please repeat?");
@@ -151,12 +170,13 @@ class TelnyxAIConversation {
                 return;
             }
 
-            logger.info(`🗣️  Customer said: ${transcript.substring(0, 100)}...`);
+            logger.info(`💬 [AI-CONVERSATION] Turn ${state.turnNumber + 1} - Customer: "${transcript}"`);
 
             // Increment turn
             state.turnNumber++;
 
             // Process with AI conversation engine
+            logger.info(`🤖 [AI-CONVERSATION] Processing AI response for turn ${state.turnNumber}...`);
             const aiResponse = await this.getAIResponse(
                 callId,
                 transcript,
@@ -164,6 +184,12 @@ class TelnyxAIConversation {
                 state.turnNumber,
                 state.conversationHistory
             );
+
+            logger.info(`💬 [AI-CONVERSATION] Turn ${state.turnNumber} - AI: "${aiResponse.answer}"`);
+            logger.info(`   Intent: ${aiResponse.intent}, Confidence: ${aiResponse.confidence}`);
+            if (aiResponse.emotion) {
+                logger.info(`   Emotion: ${aiResponse.emotion}`);
+            }
 
             // Store conversation turn
             await this.storeConversationTurn(
@@ -340,6 +366,10 @@ class TelnyxAIConversation {
      */
     async getAIResponse(callId, userInput, campaignId, turnNumber, conversationHistory = []) {
         try {
+            logger.info(`🤖 [AI-CONVERSATION] Calling conversation engine...`);
+            logger.info(`   User Input: "${userInput}"`);
+            logger.info(`   Turn Number: ${turnNumber}`);
+
             const response = await axios.post(
                 `${this.apiBaseUrl}/api/v1/conversation/process`,
                 {
@@ -354,17 +384,36 @@ class TelnyxAIConversation {
                 { timeout: 15000 }
             );
 
+            logger.info(`✅ [AI-CONVERSATION] Conversation engine responded`);
+            logger.info(`   Response: "${response.data.answer?.substring(0, 100)}..."`);
+
             return response.data;
 
         } catch (error) {
-            logger.error('Error getting AI response:', error.message);
+            logger.error(`❌ [AI-CONVERSATION] Error getting AI response:`, error.message);
+            if (error.response) {
+                logger.error(`   API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+            }
 
-            // Fallback response
+            // Fallback response based on context
+            let fallbackAnswer = "I'm sorry, could you repeat that?";
+
+            if (turnNumber === 0 || userInput === 'initial_greeting') {
+                fallbackAnswer = "Hello! Thank you for answering. I'm calling to share some information that might interest you. How are you doing today?";
+            } else if (userInput.toLowerCase().includes('yes') || userInput.toLowerCase().includes('interested')) {
+                fallbackAnswer = "That's great to hear! Let me share more details with you.";
+            } else if (userInput.toLowerCase().includes('no') || userInput.toLowerCase().includes('not interested')) {
+                fallbackAnswer = "I understand. Thank you for your time. Have a great day!";
+            }
+
+            logger.info(`🔄 [AI-CONVERSATION] Using fallback response: "${fallbackAnswer}"`);
+
             return {
-                answer: "I'm sorry, could you repeat that?",
-                confidence: 0.3,
-                emotion: 'confused',
-                intent: 'clarification'
+                answer: fallbackAnswer,
+                confidence: 0.5,
+                emotion: 'neutral',
+                intent: userInput === 'initial_greeting' ? 'greeting' : 'clarification',
+                should_fallback: false
             };
         }
     }
