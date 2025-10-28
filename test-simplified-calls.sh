@@ -22,7 +22,7 @@ NC='\033[0m'
 
 # Configuration
 API_URL="${API_URL:-http://localhost:3000/api/v1}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@demo.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 
 # Test phone numbers - Real numbers for testing
