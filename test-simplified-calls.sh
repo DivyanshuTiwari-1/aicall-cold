@@ -25,13 +25,16 @@ API_URL="${API_URL:-http://localhost:3000/api/v1}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 
-# Test phone numbers - REPLACE WITH YOUR REAL NUMBERS
+# Test phone numbers - Real numbers for testing
 TEST_PHONES=(
-    "+1234567890"
-    "+1234567891"
-    "+1234567892"
-    "+1234567893"
-    "+1234567894"
+    "+14154305"
+    "+15127510"
+    "+12023214"
+    "+12032472"
+    "+12063849"
+    "+12103167"
+    "+12139780"
+    "+12153561"
 )
 
 echo -e "${YELLOW}⚠️  WARNING: This will make 5 REAL phone calls!${NC}"
@@ -52,7 +55,7 @@ api_call() {
     local endpoint=$2
     local data=$3
     local token=$4
-    
+
     if [ -n "$token" ]; then
         curl -s -X "$method" \
             -H "Content-Type: application/json" \
@@ -174,14 +177,14 @@ echo ""
 echo -e "${BLUE}6️⃣  Checking call results...${NC}"
 echo ""
 docker-compose exec -T postgres psql -U postgres -d ai_dialer << EOF
-SELECT 
+SELECT
     id,
     status,
     outcome,
     duration,
     cost,
     to_char(created_at, 'HH24:MI:SS') as time
-FROM calls 
+FROM calls
 WHERE campaign_id = '$CAMPAIGN_ID'
 ORDER BY created_at DESC;
 EOF
@@ -201,4 +204,3 @@ echo "Cleanup (optional):"
 echo "  • Stop queue: curl -X POST -H \"Authorization: Bearer $TOKEN\" $API_URL/calls/automated/stop -d \"{\\\"campaignId\\\":\\\"$CAMPAIGN_ID\\\"}\""
 echo "  • Delete campaign: curl -X DELETE -H \"Authorization: Bearer $TOKEN\" $API_URL/campaigns/$CAMPAIGN_ID"
 echo ""
-
