@@ -68,27 +68,27 @@ const LiveMonitor = () => {
 
     const handleCallUpdate = (data) => {
       console.log('📞 Call status update:', data);
-      
+
       // Show detailed status notifications
       if (data.status === 'ringing') {
-        toast(`☎️ ${data.message || 'Call is ringing...'}`, { 
+        toast(`☎️ ${data.message || 'Call is ringing...'}`, {
           duration: 2000,
           icon: '☎️'
         });
       } else if (data.status === 'connected') {
         toast.success(`✅ ${data.message || 'Customer answered!'}`);
       } else if (data.phase === 'listening') {
-        toast.info(`👂 ${data.message || 'AI listening to customer...'}`, { 
+        toast.info(`👂 ${data.message || 'AI listening to customer...'}`, {
           duration: 2000,
           icon: '👂'
         });
       } else if (data.phase === 'processing') {
-        toast.info(`🤔 ${data.message || 'AI processing response...'}`, { 
+        toast.info(`🤔 ${data.message || 'AI processing response...'}`, {
           duration: 2000,
           icon: '🤔'
         });
       }
-      
+
       // Refresh live calls when call status changes
       refetch();
     };
@@ -297,46 +297,46 @@ const LiveMonitor = () => {
 
   const getCallStatusBadge = (status, phase) => {
     const statusConfig = {
-      'initiated': { 
-        color: 'bg-blue-100 text-blue-800', 
-        icon: '📞', 
+      'initiated': {
+        color: 'bg-blue-100 text-blue-800',
+        icon: '📞',
         label: 'Dialing',
-        pulse: true 
+        pulse: true
       },
-      'ringing': { 
-        color: 'bg-yellow-100 text-yellow-800', 
-        icon: '☎️', 
+      'ringing': {
+        color: 'bg-yellow-100 text-yellow-800',
+        icon: '☎️',
         label: 'Ringing',
-        pulse: true 
+        pulse: true
       },
-      'connected': { 
-        color: 'bg-green-100 text-green-800', 
-        icon: '✅', 
+      'connected': {
+        color: 'bg-green-100 text-green-800',
+        icon: '✅',
         label: 'Connected',
-        pulse: false 
+        pulse: false
       },
-      'in_progress': { 
-        color: 'bg-purple-100 text-purple-800', 
-        icon: phase === 'listening' ? '👂' : phase === 'processing' ? '🤔' : '💬', 
+      'in_progress': {
+        color: 'bg-purple-100 text-purple-800',
+        icon: phase === 'listening' ? '👂' : phase === 'processing' ? '🤔' : '💬',
         label: phase === 'listening' ? 'Listening' : phase === 'processing' ? 'Processing' : 'Talking',
-        pulse: phase === 'processing' 
+        pulse: phase === 'processing'
       },
-      'completed': { 
-        color: 'bg-gray-100 text-gray-800', 
-        icon: '✓', 
+      'completed': {
+        color: 'bg-gray-100 text-gray-800',
+        icon: '✓',
         label: 'Completed',
-        pulse: false 
+        pulse: false
       },
-      'failed': { 
-        color: 'bg-red-100 text-red-800', 
-        icon: '❌', 
+      'failed': {
+        color: 'bg-red-100 text-red-800',
+        icon: '❌',
         label: 'Failed',
-        pulse: false 
+        pulse: false
       },
     };
 
     const config = statusConfig[status] || statusConfig['initiated'];
-    
+
     return (
       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color}`}>
         <span className={`mr-1 ${config.pulse ? 'animate-pulse' : ''}`}>{config.icon}</span>

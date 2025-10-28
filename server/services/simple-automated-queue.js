@@ -291,7 +291,7 @@ class SimpleAutomatedQueue {
             // Update call status to failed if it was created
             await query(`
                 UPDATE calls
-                SET status = 'failed', outcome = 'error', updated_at = CURRENT_TIMESTAMP
+                SET status = 'failed', outcome = 'failed', updated_at = CURRENT_TIMESTAMP
                 WHERE id = $1
             `, [callId]).catch(err => {
                 logger.error('Failed to update call status:', err);

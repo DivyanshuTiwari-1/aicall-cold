@@ -43,18 +43,23 @@ class TelnyxCallControl {
 
             logger.info(`📞 Initiating Telnyx call: ${callId} to ${contact.phone}`);
 
-            // Create call via Telnyx Call Control API
-            const call = await telnyx.calls.create({
+            // Create call via Telnyx Call Control API using axios
+            const response = await axios.post('https://api.telnyx.com/v2/calls', {
                 connection_id: this.connectionId,
                 to: contact.phone,
                 from: fromNumber || this.phoneNumber,
                 webhook_url: this.webhookUrl,
                 webhook_url_method: 'POST',
                 client_state: clientState,
-                // Optional: Set timeout
                 timeout_secs: 30
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                }
             });
 
+            const call = response.data.data;
             logger.info(`✅ Telnyx call created: ${call.call_control_id}`);
 
             return {

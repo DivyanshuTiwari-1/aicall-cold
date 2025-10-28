@@ -414,11 +414,11 @@ router.post('/telnyx', async (req, res) => {
                 // Update status to ringing and broadcast
                 if (metadata.callId && metadata.organizationId) {
                     await query(`
-                        UPDATE calls 
-                        SET status = 'ringing', updated_at = CURRENT_TIMESTAMP 
+                        UPDATE calls
+                        SET status = 'ringing', updated_at = CURRENT_TIMESTAMP
                         WHERE id = $1
                     `, [metadata.callId]);
-                    
+
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
                         metadata.organizationId,
                         metadata.callId,
@@ -433,11 +433,11 @@ router.post('/telnyx', async (req, res) => {
                 // Update status to connected and broadcast
                 if (metadata.callId && metadata.organizationId) {
                     await query(`
-                        UPDATE calls 
-                        SET status = 'connected', updated_at = CURRENT_TIMESTAMP 
+                        UPDATE calls
+                        SET status = 'connected', updated_at = CURRENT_TIMESTAMP
                         WHERE id = $1
                     `, [metadata.callId]);
-                    
+
                     WebSocketBroadcaster.broadcastCallStatusUpdate(
                         metadata.organizationId,
                         metadata.callId,
@@ -475,7 +475,7 @@ router.post('/telnyx', async (req, res) => {
                         { callControlId, message: 'AI processing response...', phase: 'processing' }
                     );
                 }
-                
+
                 const recordingUrl = event.payload?.recording_urls?.wav || event.payload?.public_recording_url;
 
                 if (recordingUrl) {
