@@ -26,7 +26,9 @@ const WarmTransferManager = () => {
   } = useQuery({
     queryKey: ['warmTransfers', 'pending'],
     queryFn: () => warmTransferAPI.getPendingTransfers(),
-    refetchInterval: 5000, // Refetch every 5 seconds
+    refetchInterval: 30000, // Refetch every 30 seconds (reduced from 5s)
+    retry: 1, // Only retry once on failure
+    retryDelay: 5000, // Wait 5 seconds before retry
   });
 
   // Fetch transfer history
