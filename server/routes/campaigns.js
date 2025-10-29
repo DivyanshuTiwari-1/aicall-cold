@@ -419,21 +419,34 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async(req, res) =
             });
         }
 
-        // Check if campaign has active calls
+        // Check if queue is active and stop it first
+        const simpleQueue = require('../services/simple-automated-queue');
+        const queueStatus = simpleQueue.getQueueStatus(id);
+
+        if (queueStatus && queueStatus.status === 'running') {
+            logger.info(`Stopping active queue for campaign ${id} before deletion`);
+            await simpleQueue.stopQueue(id);
+        }
+
+        // Check if campaign has active/running calls
         const activeCalls = await query(
-            'SELECT COUNT(*) as count FROM calls WHERE campaign_id = $1 AND status IN ($2, $3)',
-            [id, 'initiated', 'in_progress']
+            `SELECT COUNT(*) as count FROM calls
+             WHERE campaign_id = $1
+             AND status IN ('initiated', 'ringing', 'connected', 'in_progress')`,
+            [id]
         );
 
-        if (parseInt(activeCalls.rows[0].count) > 0) {
+        const activeCallCount = parseInt(activeCalls.rows[0].count);
+
+        if (activeCallCount > 0) {
             return res.status(400).json({
                 success: false,
-                message: 'Cannot delete campaign with active calls'
+                message: `Cannot delete campaign with ${activeCallCount} active call(s). Please wait for calls to complete.`
             });
         }
 
         // Delete campaign (cascade will handle related records)
-        await query('DELETE FROM campaigns WHERE id = $1', [id]);
+        const deleteResult = await query('DELETE FROM campaigns WHERE id = $1 RETURNING id', [id]);
 
         logger.info(`Campaign deleted: ${id} - ${campaignCheck.rows[0].name}`);
 
