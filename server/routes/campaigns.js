@@ -6,6 +6,15 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// Import queue service for campaign operations
+let simpleQueue = null;
+const loadSimpleQueue = () => {
+    if (!simpleQueue) {
+        simpleQueue = require('../services/simple-automated-queue');
+    }
+    return simpleQueue;
+};
+
 // Validation schemas
 const createCampaignSchema = Joi.object({
     name: Joi.string().min(1).max(255).required(),
@@ -84,11 +93,11 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
         `, params);
 
         // Get active queue status from simple queue service
-        const simpleQueue = require('../services/simple-automated-queue');
+        const queueService = loadSimpleQueue();
 
         const campaigns = result.rows.map(campaign => {
             // Check if this campaign has an active queue
-            const queueStatus = simpleQueue.getQueueStatus(campaign.id);
+            const queueStatus = queueService.getQueueStatus(campaign.id);
             const isQueueActive = queueStatus && queueStatus.status === 'running';
 
             return {
@@ -155,8 +164,8 @@ router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), 
         const campaign = result.rows[0];
 
         // Check if this campaign has an active queue
-        const simpleQueue = require('../services/simple-automated-queue');
-        const queueStatus = simpleQueue.getQueueStatus(id);
+        const queueService = loadSimpleQueue();
+        const queueStatus = queueService.getQueueStatus(id);
         const isQueueActive = queueStatus && queueStatus.status === 'running';
 
         res.json({
@@ -420,12 +429,12 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async(req, res) =
         }
 
         // Check if queue is active and stop it first
-        const simpleQueue = require('../services/simple-automated-queue');
-        const queueStatus = simpleQueue.getQueueStatus(id);
+        const queueService = loadSimpleQueue();
+        const queueStatus = queueService.getQueueStatus(id);
 
         if (queueStatus && queueStatus.status === 'running') {
             logger.info(`Stopping active queue for campaign ${id} before deletion`);
-            await simpleQueue.stopQueue(id);
+            await queueService.stopQueue(id);
         }
 
         // Check if campaign has active/running calls
