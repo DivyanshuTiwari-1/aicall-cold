@@ -97,6 +97,22 @@ class WebSocketBroadcaster {
     }
 
     /**
+     * Generic broadcast to organization
+     */
+    static broadcastToOrganization(organizationId, data) {
+        if (!global.broadcastToOrganization) {
+            logger.warn('WebSocket broadcaster not available');
+            return;
+        }
+
+        try {
+            global.broadcastToOrganization(organizationId, data);
+        } catch (error) {
+            logger.error('Error broadcasting to organization:', error);
+        }
+    }
+
+    /**
      * Check if WebSocket broadcasting is available
      */
     static isAvailable() {

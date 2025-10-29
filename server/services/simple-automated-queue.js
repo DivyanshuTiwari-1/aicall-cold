@@ -148,16 +148,30 @@ class SimpleAutomatedQueue {
                 return;
             }
 
+            // CRITICAL: Reserve slot IMMEDIATELY to prevent concurrent calls
+            // This ensures only one call processes at a time per campaign
+            const { v4: uuidv4 } = require('uuid');
+            const tempCallId = uuidv4();
+            this.activeCalls.set(campaignId, {
+                callId: tempCallId,
+                contactId: contact.id,
+                startTime: new Date(),
+                status: 'reserved'
+            });
+
+            logger.info(`🔒 [QUEUE] Campaign ${campaignId}: Reserved slot for contact ${contact.id} (preventing concurrent calls)`);
+
             // Initiate call
             const callResult = await this.initiateCall(contact, queueState);
 
             queueState.processedContacts++;
 
-            // Track active call - will be cleared by onCallCompleted
+            // Update with real call ID - will be cleared by onCallCompleted
             this.activeCalls.set(campaignId, {
                 callId: callResult.callId,
                 contactId: contact.id,
-                startTime: new Date()
+                startTime: new Date(),
+                status: 'active'
             });
 
             logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Call initiated, waiting for completion...`);
@@ -170,8 +184,9 @@ class SimpleAutomatedQueue {
             logger.error(`❌ [QUEUE] Campaign ${campaignId}: Error processing contact:`, error);
             queueState.failedCalls++;
 
-            // Clear active call if it was set
+            // Clear active call slot to allow next contact to process
             this.activeCalls.delete(campaignId);
+            logger.info(`🔓 [QUEUE] Campaign ${campaignId}: Released slot due to error`);
 
             // Continue with next contact after delay even on error
             logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Scheduling next contact after error (${this.callDelay}ms delay)`);
