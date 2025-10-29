@@ -9,10 +9,19 @@ const router = express.Router();
 // Import queue service for campaign operations
 let simpleQueue = null;
 const loadSimpleQueue = () => {
-    if (!simpleQueue) {
-        simpleQueue = require('../services/simple-automated-queue');
+    try {
+        if (!simpleQueue) {
+            simpleQueue = require('../services/simple-automated-queue');
+        }
+        return simpleQueue;
+    } catch (error) {
+        logger.error('Failed to load simple-automated-queue:', error);
+        // Return a mock object to prevent crashes
+        return {
+            getQueueStatus: () => null,
+            stopQueue: async () => ({ success: false, message: 'Queue service unavailable' })
+        };
     }
-    return simpleQueue;
 };
 
 // Validation schemas
@@ -97,8 +106,14 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
 
         const campaigns = result.rows.map(campaign => {
             // Check if this campaign has an active queue
-            const queueStatus = queueService.getQueueStatus(campaign.id);
-            const isQueueActive = queueStatus && queueStatus.status === 'running';
+            let isQueueActive = false;
+            try {
+                const queueStatus = queueService.getQueueStatus ? queueService.getQueueStatus(campaign.id) : null;
+                isQueueActive = queueStatus && queueStatus.status === 'running';
+            } catch (error) {
+                logger.error(`Error getting queue status for campaign ${campaign.id}:`, error);
+                isQueueActive = false;
+            }
 
             return {
                 id: campaign.id,
@@ -164,9 +179,15 @@ router.get('/:id', authenticateToken, requireRole('admin', 'manager', 'agent'), 
         const campaign = result.rows[0];
 
         // Check if this campaign has an active queue
-        const queueService = loadSimpleQueue();
-        const queueStatus = queueService.getQueueStatus(id);
-        const isQueueActive = queueStatus && queueStatus.status === 'running';
+        let isQueueActive = false;
+        try {
+            const queueService = loadSimpleQueue();
+            const queueStatus = queueService.getQueueStatus ? queueService.getQueueStatus(id) : null;
+            isQueueActive = queueStatus && queueStatus.status === 'running';
+        } catch (error) {
+            logger.error(`Error getting queue status for campaign ${id}:`, error);
+            isQueueActive = false;
+        }
 
         res.json({
             success: true,
@@ -429,12 +450,20 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async(req, res) =
         }
 
         // Check if queue is active and stop it first
-        const queueService = loadSimpleQueue();
-        const queueStatus = queueService.getQueueStatus(id);
-
-        if (queueStatus && queueStatus.status === 'running') {
-            logger.info(`Stopping active queue for campaign ${id} before deletion`);
-            await queueService.stopQueue(id);
+        try {
+            const queueService = loadSimpleQueue();
+            if (queueService.getQueueStatus) {
+                const queueStatus = queueService.getQueueStatus(id);
+                if (queueStatus && queueStatus.status === 'running') {
+                    logger.info(`Stopping active queue for campaign ${id} before deletion`);
+                    if (queueService.stopQueue) {
+                        await queueService.stopQueue(id);
+                    }
+                }
+            }
+        } catch (error) {
+            logger.error(`Error checking/stopping queue for campaign ${id}:`, error);
+            // Continue with deletion even if queue check fails
         }
 
         // Check if campaign has active/running calls
