@@ -172,10 +172,9 @@ services:
     restart: always
     ports:
       - "80:80"
-      - "443:443"
     volumes:
-      # Mount SSL certificates if available
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      # SSL not used in this simplified config
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
     networks:
       - ai-dialer-network
     depends_on:
