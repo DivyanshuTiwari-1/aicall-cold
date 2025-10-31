@@ -830,6 +830,19 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
 
         // Start the automated call queue (SIMPLIFIED VERSION - using Telnyx direct)
         try {
+            // Validate Telnyx config up-front for actionable feedback
+            try {
+                const telnyxCallControl = require('../services/telnyx-call-control');
+                telnyxCallControl.validateConfig();
+            } catch (cfgErr) {
+                logger.error('❌ [API] Telnyx configuration invalid:', cfgErr.message || cfgErr);
+                return res.status(400).json({
+                    success: false,
+                    message: cfgErr.message || 'Telnyx configuration invalid',
+                    code: cfgErr.code || 'TELNYX_CONFIG_INVALID'
+                });
+            }
+
             const simpleQueue = require('../services/simple-automated-queue');
             await simpleQueue.startQueue(campaignId, phoneNumberId, selectedNumber.phone_number);
 

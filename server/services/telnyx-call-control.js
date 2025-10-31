@@ -20,13 +20,43 @@ class TelnyxCallControl {
     }
 
     /**
+     * Validate Telnyx configuration and provide actionable errors
+     */
+    validateConfig() {
+        const errors = [];
+
+        if (!this.apiKey) {
+            errors.push('Missing TELNYX_API_KEY');
+        } else if (!/^KEY[A-Z0-9]{10,}$/i.test(this.apiKey)) {
+            errors.push('TELNYX_API_KEY looks malformed');
+        }
+
+        if (!this.connectionId) {
+            errors.push('Missing TELNYX_CONNECTION_ID');
+        }
+
+        if (!this.webhookUrl) {
+            errors.push('Missing API_URL for webhook URL');
+        } else if (/localhost|127\.0\.0\.1/i.test(this.webhookUrl)) {
+            logger.warn(`⚠️  Telnyx webhook_url points to a localhost address (${this.webhookUrl}). Webhooks will NOT reach your server unless you expose a public URL.`);
+        }
+
+        if (errors.length) {
+            const message = `Telnyx configuration invalid: ${errors.join('; ')}`;
+            logger.error(message);
+            const error = new Error(message);
+            error.code = 'TELNYX_CONFIG_INVALID';
+            throw error;
+        }
+    }
+
+    /**
      * Initiate automated AI call via Telnyx
      */
     async makeAICall({ callId, contact, campaignId, fromNumber }) {
         try {
-            if (!this.apiKey || !this.connectionId) {
-                throw new Error('Telnyx not configured');
-            }
+            // Validate configuration and provide helpful diagnostics early
+            this.validateConfig();
 
             // Prepare metadata to send with call
             const metadata = {
