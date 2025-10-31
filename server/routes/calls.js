@@ -718,8 +718,10 @@ const stopAutomatedCallSchema = Joi.object({
 // Start automated calls for a campaign
 router.post('/automated/start', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
+        logger.info(`📣 [API] Automated start requested by user ${req.user?.id} (org ${req.organizationId})`);
         const { error, value } = automatedCallSchema.validate(req.body);
         if (error) {
+            logger.warn(`⚠️  [API] Automated start validation error: ${error.details.map(d => d.message).join('; ')}`);
             return res.status(400).json({
                 success: false,
                 message: 'Validation error',
@@ -728,6 +730,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         }
 
         const { campaignId, phoneNumberId } = value;
+        logger.info(`📣 [API] Starting automated calls - campaign=${campaignId} phoneNumberId=${phoneNumberId}`);
 
         // Verify campaign exists and belongs to organization
         const campaignCheck = await query(
@@ -736,6 +739,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         );
 
         if (campaignCheck.rows.length === 0) {
+            logger.warn(`⚠️  [API] Campaign ${campaignId} not found for org ${req.organizationId}`);
             return res.status(404).json({
                 success: false,
                 message: 'Campaign not found'
@@ -761,6 +765,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         `, [phoneNumberId, req.organizationId]);
 
         if (phoneNumberResult.rows.length === 0) {
+            logger.warn(`⚠️  [API] Phone number ${phoneNumberId} not found/ inactive for org ${req.organizationId}`);
             return res.status(404).json({
                 success: false,
                 message: 'Phone number not found or inactive'
@@ -773,6 +778,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         if (req.user.role === 'agent') {
             // Agents can only use numbers assigned to them
             if (selectedNumber.assigned_to !== req.user.id) {
+                logger.warn(`⚠️  [API] Agent ${req.user.id} tried to use unassigned number ${selectedNumber.id}`);
                 return res.status(403).json({
                     success: false,
                     message: 'You can only use phone numbers assigned to you'
@@ -781,6 +787,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
 
             // Check daily limit for agents
             if (selectedNumber.calls_made_today >= selectedNumber.daily_limit) {
+                logger.warn(`⚠️  [API] Daily limit reached for number ${selectedNumber.id} (limit=${selectedNumber.daily_limit})`);
                 return res.status(400).json({
                     success: false,
                     message: `Daily call limit reached (${selectedNumber.daily_limit} calls)`,
@@ -803,6 +810,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         const contactCount = parseInt(contactCheck.rows[0].count);
 
         if (contactCount === 0) {
+            logger.warn(`⚠️  [API] No contacts ready for calling for campaign ${campaignId}`);
             return res.status(400).json({
                 success: false,
                 message: 'No contacts ready for calling. Please add contacts with status "pending", "retry", or "new" to this campaign.'
@@ -834,7 +842,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
                 phoneNumber: selectedNumber.phone_number
             });
         } catch (queueError) {
-            logger.error('Queue start error:', queueError);
+            logger.error('❌ [API] Queue start error:', queueError);
             res.status(500).json({
                 success: false,
                 message: 'Failed to start automated call queue'
@@ -842,7 +850,7 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
         }
 
     } catch (error) {
-        logger.error('Start automated calls error:', error);
+        logger.error('❌ [API] Start automated calls error:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to start automated calls'
@@ -853,8 +861,10 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
 // Stop automated calls for a campaign
 router.post('/automated/stop', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
     try {
+        logger.info(`📣 [API] Automated stop requested by user ${req.user?.id} (org ${req.organizationId})`);
         const { error, value } = stopAutomatedCallSchema.validate(req.body);
         if (error) {
+            logger.warn(`⚠️  [API] Automated stop validation error: ${error.details.map(d => d.message).join('; ')}`);
             return res.status(400).json({
                 success: false,
                 message: 'Validation error',
@@ -877,7 +887,7 @@ router.post('/automated/stop', authenticateToken, requireRole('admin', 'manager'
                 campaignId: campaignId
             });
         } catch (queueError) {
-            logger.error('Queue stop error:', queueError);
+            logger.error('❌ [API] Queue stop error:', queueError);
             res.status(500).json({
                 success: false,
                 message: 'Failed to stop automated call queue'
@@ -885,7 +895,7 @@ router.post('/automated/stop', authenticateToken, requireRole('admin', 'manager'
         }
 
     } catch (error) {
-        logger.error('Stop automated calls error:', error);
+        logger.error('❌ [API] Stop automated calls error:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to stop automated calls'
@@ -922,6 +932,8 @@ router.get('/queue/status/:campaignId', authenticateToken, requireRole('admin', 
                 logger.info(`   Status: ${status.status}`);
                 logger.info(`   Progress: ${status.processedContacts}/${status.totalContacts}`);
                 logger.info(`   Success: ${status.successfulCalls}, Failed: ${status.failedCalls}`);
+            } else {
+                logger.info(`   No active queue found for campaign ${campaignId}`);
             }
 
             res.json({
