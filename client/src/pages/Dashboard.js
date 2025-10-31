@@ -15,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import analyticsAPI from '../services/analytics';
 import { usersAPI } from '../services/users';
+import Calls from './Calls';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -218,6 +219,7 @@ const Dashboard = () => {
   const tabs = [
     { id: 'executive', name: 'Executive View' },
     { id: 'team', name: 'Team Performance' },
+    { id: 'history', name: 'Call History' },
   ];
 
   return (
@@ -627,6 +629,13 @@ const Dashboard = () => {
             </div>
           </div>
         </>
+      )}
+
+      {/* Call History Tab */}
+      {activeTab === 'history' && (
+        <div className='mt-6'>
+          <Calls />
+        </div>
       )}
 
     </div>

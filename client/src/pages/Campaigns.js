@@ -51,6 +51,10 @@ const Campaigns = () => {
         queryFn: () => phoneNumbersAPI.getAvailableNumbers(),
     });
 
+    // Derived data used by effects/render; declare before usage
+    const campaigns = campaignsData?.campaigns || [];
+    const stats = statsData?.stats || {};
+
     // Start automated calls mutation
     const startAutomatedCallsMutation = useMutation({
         mutationFn: ({ campaignId, phoneNumberId }) => callsAPI.startAutomatedCalls(campaignId, phoneNumberId),
@@ -180,8 +184,6 @@ const Campaigns = () => {
         stopAutomatedCallsMutation.mutate(campaignId);
     };
 
-    const campaigns = campaignsData?.campaigns || [];
-    const stats = statsData?.stats || {};
 
     if (campaignsLoading) {
         return (
