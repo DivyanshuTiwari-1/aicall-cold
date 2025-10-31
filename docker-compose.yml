@@ -181,10 +181,35 @@ services:
       backend:
         condition: service_healthy
 
+  # HTTPS reverse proxy with automatic Let's Encrypt
+  caddy:
+    image: caddy:2-alpine
+    container_name: ai-dialer-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - ACME_AGREE=true
+      - EMAIL=${LETSENCRYPT_EMAIL:-admin@atsservice.site}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - ai-dialer-network
+    depends_on:
+      frontend:
+        condition: service_started
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
     driver: local
 
 networks:

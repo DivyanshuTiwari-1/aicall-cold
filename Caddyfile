@@ -1,0 +1,12 @@
+atsservice.site, www.atsservice.site {
+	rewrite /.well-known/* {path}
+	encode zstd gzip
+	log
+
+	# Proxy all traffic to the frontend container (which serves the React app and proxies /api and /ws)
+	reverse_proxy frontend:80 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-For {remote}
+	}
+}
