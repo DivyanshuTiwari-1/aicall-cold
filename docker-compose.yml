@@ -170,11 +170,8 @@ services:
         REACT_APP_WS_URL: /ws
     container_name: ai-dialer-frontend
     restart: always
-    ports:
-      - "80:80"
-    volumes:
-      # SSL not used in this simplified config
-      # - ./nginx/ssl:/etc/nginx/ssl:ro
+    expose:
+      - "80"
     networks:
       - ai-dialer-network
     depends_on:
