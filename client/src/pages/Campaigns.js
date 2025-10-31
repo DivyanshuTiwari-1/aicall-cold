@@ -1,12 +1,12 @@
 import {
-    ChartBarIcon,
-    ClockIcon,
-    PhoneIcon,
-    PlayIcon,
-    PlusIcon,
-    StopIcon,
-    TrashIcon,
-    UserGroupIcon
+  ChartBarIcon,
+  ClockIcon,
+  PhoneIcon,
+  PlayIcon,
+  PlusIcon,
+  StopIcon,
+  TrashIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
@@ -496,8 +496,8 @@ const Campaigns = () => {
     );
 };
 
-// Phone Number Selector Modal Component
-const PhoneNumberSelectorModal = ({ phoneNumbers, onSelect, onClose, isLoading }) => {
+// Phone Number Selector Modal Component (use function declaration so it can be referenced before definition)
+function PhoneNumberSelectorModal({ phoneNumbers, onSelect, onClose, isLoading }) {
     const [selectedNumber, setSelectedNumber] = useState('');
 
     return (
@@ -581,6 +581,6 @@ const PhoneNumberSelectorModal = ({ phoneNumbers, onSelect, onClose, isLoading }
             </div>
         </div>
     );
-};
+}
 
 export default Campaigns;
