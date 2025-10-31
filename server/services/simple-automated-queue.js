@@ -14,6 +14,8 @@ class SimpleAutomatedQueue {
         this.activeQueues = new Map(); // campaignId -> queue state
         this.activeCalls = new Map(); // campaignId -> current active call info
         this.callDelay = 5000; // 5 seconds between calls (AFTER completion)
+        // Track phone numbers currently being dialed/active across all campaigns to prevent duplicates
+        this.inProgressNumbers = new Set();
     }
 
     /**
@@ -148,8 +150,35 @@ class SimpleAutomatedQueue {
                 return;
             }
 
+            // Guard: Prevent duplicate dials to the same phone number
+            // 1) Skip immediately if number is already in-progress in memory
+            const targetPhone = String(contact.phone).trim();
+            if (this.inProgressNumbers.has(targetPhone)) {
+                logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Number ${targetPhone} already in progress elsewhere, skipping contact ${contact.id}`);
+                // Try next contact right away
+                setImmediate(() => this.processNextContact(campaignId));
+                return;
+            }
+
+            // 2) Double-check against database for any active call to the same number
+            const activeCallCheck = await query(`
+                SELECT id FROM calls
+                WHERE to_number = $1
+                  AND status IN ('initiated','ringing','connected','in_progress')
+                LIMIT 1
+            `, [targetPhone]).catch(err => {
+                logger.error('Error checking for active calls by number:', err);
+                return { rows: [] };
+            });
+
+            if (activeCallCheck && activeCallCheck.rows && activeCallCheck.rows.length > 0) {
+                logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Active call already exists for ${targetPhone} (call ${activeCallCheck.rows[0].id}), skipping`);
+                setImmediate(() => this.processNextContact(campaignId));
+                return;
+            }
+
             // CRITICAL: Reserve slot IMMEDIATELY to prevent concurrent calls
-            // This ensures only one call processes at a time per campaign
+            // This ensures only one call processes at a time per campaign and per phone number system-wide
             const { v4: uuidv4 } = require('uuid');
             const tempCallId = uuidv4();
             this.activeCalls.set(campaignId, {
@@ -158,6 +187,8 @@ class SimpleAutomatedQueue {
                 startTime: new Date(),
                 status: 'reserved'
             });
+            // Reserve number globally
+            this.inProgressNumbers.add(targetPhone);
 
             logger.info(`🔒 [QUEUE] Campaign ${campaignId}: Reserved slot for contact ${contact.id} (preventing concurrent calls)`);
 
@@ -184,8 +215,9 @@ class SimpleAutomatedQueue {
             logger.error(`❌ [QUEUE] Campaign ${campaignId}: Error processing contact:`, error);
             queueState.failedCalls++;
 
-            // Clear active call slot to allow next contact to process
+            // Clear active call slot and release number to allow next contact to process
             this.activeCalls.delete(campaignId);
+            try { this.inProgressNumbers.delete(String(contact.phone).trim()); } catch (_) {}
             logger.info(`🔓 [QUEUE] Campaign ${campaignId}: Released slot due to error`);
 
             // Continue with next contact after delay even on error
@@ -380,6 +412,24 @@ class SimpleAutomatedQueue {
             this.activeCalls.delete(campaignId);
             logger.info(`✅ [QUEUE] Campaign ${campaignId}: Active call cleared`);
         }
+
+        // Release the phone number reservation for this completed call
+        try {
+            // Look up the completed call's number
+            if (callId) {
+                query(`SELECT to_number FROM calls WHERE id = $1`, [callId])
+                    .then(r => {
+                        const num = r.rows?.[0]?.to_number;
+                        if (num) {
+                            this.inProgressNumbers.delete(String(num).trim());
+                            logger.info(`🔓 [QUEUE] Released number reservation for ${num}`);
+                        }
+                    })
+                    .catch(() => {
+                        // Best-effort release; ignore errors
+                    });
+            }
+        } catch (_) {}
 
         // Update success/fail counts based on outcome
         if (outcome === 'completed' || outcome === 'scheduled' || outcome === 'interested' || outcome === 'answered') {
