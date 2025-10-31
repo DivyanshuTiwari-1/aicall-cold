@@ -177,6 +177,19 @@ class SimpleAutomatedQueue {
                 return;
             }
 
+            // Mark contact as in_progress to avoid being picked again by other workers
+            try {
+                await query(`
+                    UPDATE contacts
+                    SET status = 'in_progress', updated_at = CURRENT_TIMESTAMP,
+                        attempts = COALESCE(attempts, 0) + 1
+                    WHERE id = $1
+                `, [contact.id]);
+                logger.info(`🚦 [QUEUE] Campaign ${campaignId}: Marked contact ${contact.id} as in_progress`);
+            } catch (markErr) {
+                logger.error(`❌ [QUEUE] Campaign ${campaignId}: Failed to mark contact ${contact.id} in_progress:`, markErr);
+            }
+
             // CRITICAL: Reserve slot IMMEDIATELY to prevent concurrent calls
             // This ensures only one call processes at a time per campaign and per phone number system-wide
             const { v4: uuidv4 } = require('uuid');
@@ -215,6 +228,16 @@ class SimpleAutomatedQueue {
             logger.error(`❌ [QUEUE] Campaign ${campaignId}: Error processing contact:`, error);
             queueState.failedCalls++;
 
+            // Mark contact for retry on failure (unless DNC)
+            try {
+                await query(`
+                    UPDATE contacts
+                    SET status = 'retry', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1 AND status != 'dnc'
+                `, [contact?.id]);
+                logger.info(`🔁 [QUEUE] Campaign ${campaignId}: Contact ${contact?.id} marked as retry`);
+            } catch (_) {}
+
             // Clear active call slot and release number to allow next contact to process
             this.activeCalls.delete(campaignId);
             try { this.inProgressNumbers.delete(String(contact.phone).trim()); } catch (_) {}
@@ -234,7 +257,7 @@ class SimpleAutomatedQueue {
             const result = await query(`
                 SELECT * FROM contacts
                 WHERE campaign_id = $1
-                AND status IN ('pending', 'new')
+                AND status IN ('pending', 'new', 'retry')
                 ORDER BY priority DESC, created_at ASC
                 LIMIT 1
             `, [campaignId]);
@@ -255,7 +278,7 @@ class SimpleAutomatedQueue {
             const result = await query(`
                 SELECT COUNT(*) as count FROM contacts
                 WHERE campaign_id = $1
-                AND status IN ('pending', 'new')
+                AND status IN ('pending', 'new', 'retry')
             `, [campaignId]);
 
             return parseInt(result.rows[0].count);
@@ -393,7 +416,7 @@ class SimpleAutomatedQueue {
      * Called by webhook when a call completes
      * This triggers processing of the next contact after configured delay
      */
-    onCallCompleted(campaignId, callId, outcome) {
+    async onCallCompleted(campaignId, callId, outcome) {
         logger.info(`📞 [QUEUE] Campaign ${campaignId}: Call ${callId} completed with outcome: ${outcome}`);
 
         const queueState = this.activeQueues.get(campaignId);
@@ -436,6 +459,27 @@ class SimpleAutomatedQueue {
             // Already incremented in initiateCall
         } else if (outcome === 'no_answer' || outcome === 'busy' || outcome === 'failed' || outcome === 'voicemail') {
             queueState.failedCalls++;
+        }
+
+        // Mark contact as contacted or retry depending on outcome
+        try {
+            if (activeCall && activeCall.contactId) {
+                if (['completed', 'scheduled', 'interested', 'answered', 'not_interested', 'dnc_request'].includes(outcome)) {
+                    await query(`
+                        UPDATE contacts
+                        SET status = 'contacted', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [activeCall.contactId]);
+                } else if (['no_answer', 'busy', 'failed', 'voicemail'].includes(outcome)) {
+                    await query(`
+                        UPDATE contacts
+                        SET status = 'retry', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [activeCall.contactId]);
+                }
+            }
+        } catch (e) {
+            logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Failed to update contact status post-call`);
         }
 
         // Broadcast queue status update
