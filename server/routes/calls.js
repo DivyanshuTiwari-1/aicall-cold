@@ -298,6 +298,10 @@ router.get('/', authenticateToken, requireRole('admin', 'manager', 'agent'), asy
         const params = [req.organizationId];
         let paramCount = 1;
 
+        // CRITICAL: Exclude failed calls that never connected (status='initiated' with no outcome)
+        // This prevents showing duplicate entries for failed API calls
+        whereClause += ` AND NOT (c.status = 'initiated' AND c.outcome IS NULL)`;
+
         if (campaign_id) {
             paramCount++;
             whereClause += ` AND c.campaign_id = $${paramCount}`;
@@ -975,6 +979,60 @@ router.get('/queue/status/:campaignId', authenticateToken, requireRole('admin', 
         res.status(500).json({
             success: false,
             message: 'Failed to get queue status'
+        });
+    }
+});
+
+// Get active calls for Live Monitor
+router.get('/active', authenticateToken, requireRole('admin', 'manager', 'agent'), async(req, res) => {
+    try {
+        // Get all active calls with full details
+        const result = await query(`
+            SELECT
+                c.*,
+                ct.first_name,
+                ct.last_name,
+                ct.phone,
+                ct.company,
+                cp.name as campaign_name,
+                cp.type as campaign_type
+            FROM calls c
+            JOIN contacts ct ON c.contact_id = ct.id
+            JOIN campaigns cp ON c.campaign_id = cp.id
+            WHERE c.organization_id = $1
+            AND c.status IN ('initiated', 'ringing', 'connected', 'in_progress')
+            ORDER BY c.created_at DESC
+        `, [req.organizationId]);
+
+        const activeCalls = result.rows.map(call => ({
+            id: call.id,
+            campaignId: call.campaign_id,
+            contactId: call.contact_id,
+            campaignName: call.campaign_name,
+            campaignType: call.campaign_type,
+            contactName: `${call.first_name} ${call.last_name}`,
+            phone: call.phone,
+            company: call.company,
+            status: call.status,
+            callType: call.call_type,
+            duration: call.duration || 0,
+            fromNumber: call.from_number,
+            toNumber: call.to_number,
+            createdAt: call.created_at,
+            updatedAt: call.updated_at
+        }));
+
+        res.json({
+            success: true,
+            activeCalls,
+            count: activeCalls.length
+        });
+
+    } catch (error) {
+        logger.error('Active calls fetch error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch active calls'
         });
     }
 });

@@ -232,20 +232,47 @@ class SimpleAutomatedQueue {
             logger.error(`❌ [QUEUE] Campaign ${campaignId}: Error processing contact:`, error);
             queueState.failedCalls++;
 
-            // Mark contact for retry on failure (unless DNC)
-            try {
-                await query(`
-                    UPDATE contacts
-                    SET status = 'retry', updated_at = CURRENT_TIMESTAMP
-                    WHERE id = $1 AND status != 'dnc'
-                `, [contact?.id]);
-                logger.info(`🔁 [QUEUE] Campaign ${campaignId}: Contact ${contact?.id} marked as retry`);
-            } catch (_) {}
+            // CRITICAL: Clean up failed call record to prevent duplicate entries in call history
+            if (contact?.id) {
+                try {
+                    // Delete the failed call record from database
+                    await query(`
+                        DELETE FROM calls
+                        WHERE contact_id = $1
+                        AND status = 'initiated'
+                        AND created_at > NOW() - INTERVAL '5 minutes'
+                    `, [contact.id]);
+                    logger.info(`🗑️  [QUEUE] Campaign ${campaignId}: Deleted failed call record for contact ${contact.id}`);
+                } catch (deleteErr) {
+                    logger.error(`❌ Failed to delete failed call record:`, deleteErr);
+                }
+
+                // Mark contact for retry on failure (unless DNC)
+                try {
+                    await query(`
+                        UPDATE contacts
+                        SET status = 'retry', updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1 AND status != 'dnc'
+                    `, [contact.id]);
+                    logger.info(`🔁 [QUEUE] Campaign ${campaignId}: Contact ${contact.id} marked as retry`);
+                } catch (_) {}
+            }
 
             // Clear active call slot and release number to allow next contact to process
             this.activeCalls.delete(campaignId);
             try { this.inProgressNumbers.delete(String(contact.phone).trim()); } catch (_) {}
             logger.info(`🔓 [QUEUE] Campaign ${campaignId}: Released slot due to error`);
+
+            // Broadcast error to frontend
+            try {
+                WebSocketBroadcaster.broadcastToOrganization(queueState.organizationId, {
+                    type: 'call_failed',
+                    campaignId: campaignId,
+                    contactId: contact?.id,
+                    error: error.message || 'Call initiation failed',
+                    timestamp: new Date().toISOString()
+                });
+            } catch (_) {}
 
             // Continue with next contact after delay even on error
             logger.info(`🎯 [QUEUE] Campaign ${campaignId}: Scheduling next contact after error (${this.callDelay}ms delay)`);
