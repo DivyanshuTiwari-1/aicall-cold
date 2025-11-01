@@ -15,7 +15,13 @@ const WebSocketBroadcaster = require('./websocket-broadcaster');
 
 class TelnyxAIConversation {
     constructor() {
+        // Use API_INTERNAL_URL for internal service-to-service calls (Docker network)
+        // Fallback to API_URL if not set (for same-container calls)
         this.apiBaseUrl = process.env.API_INTERNAL_URL || process.env.API_URL || 'http://localhost:3000';
+
+        // Log configuration
+        logger.info(`🔧 [AI-CONVERSATION] Initialized with API URL: ${this.apiBaseUrl}`);
+
         this.conversationStates = new Map(); // callId -> state
         this.maxTurns = 20;
     }
@@ -94,7 +100,7 @@ class TelnyxAIConversation {
             });
 
             // Get campaign voice_persona for TTS
-            let voicePersona = 'amy'; // Default voice
+           voicePersona = 'amy'; // Default voice
             try {
                 const campaignResult = await query(`
                     SELECT voice_persona
@@ -634,11 +640,16 @@ class TelnyxAIConversation {
             logger.info(`   Call ID: ${callId || 'N/A'}`);
 
             // Use public API URL for audio serving (Telnyx needs public URL)
-            const publicApiUrl = process.env.API_URL || this.apiBaseUrl;
-            if (!publicApiUrl || publicApiUrl.includes('localhost')) {
+            // API_URL is the public URL, API_INTERNAL_URL is for internal calls
+            const publicApiUrl = process.env.API_URL || 'https://atsservice.site';
+
+            if (!publicApiUrl || publicApiUrl.includes('localhost') || publicApiUrl.includes('127.0.0.1')) {
                 logger.error(`❌ [TTS] API_URL must be publicly accessible. Current: ${publicApiUrl}`);
+                logger.error(`   Telnyx cannot fetch audio files from localhost. Set API_URL to your public domain.`);
                 throw new Error('API_URL must be publicly accessible for Telnyx to fetch audio files');
             }
+
+            logger.info(`🎤 [TTS] Using public API URL for audio serving: ${publicApiUrl}`);
 
             // Call internal TTS endpoint (can use internal URL)
             const response = await axios.post(

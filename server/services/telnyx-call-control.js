@@ -12,10 +12,26 @@ class TelnyxCallControl {
         this.apiKey = process.env.TELNYX_API_KEY;
         this.connectionId = process.env.TELNYX_CONNECTION_ID;
         this.phoneNumber = process.env.TELNYX_PHONE_NUMBER;
-        this.webhookUrl = `${process.env.API_URL}/api/v1/webhooks/telnyx`;
+
+        // Use API_URL from env, fallback to https://atsservice.site for production
+        const apiUrl = process.env.API_URL || 'https://atsservice.site';
+        this.webhookUrl = `${apiUrl}/api/v1/webhooks/telnyx`;
+
+        // Log configuration on startup
+        logger.info(`🔧 [TELNYX-CONFIG] Initializing Telnyx Call Control`);
+        logger.info(`   API_URL: ${apiUrl}`);
+        logger.info(`   Webhook URL: ${this.webhookUrl}`);
+        logger.info(`   Connection ID: ${this.connectionId || 'NOT SET'}`);
+        logger.info(`   API Key: ${this.apiKey ? this.apiKey.substring(0, 15) + '...' : 'NOT SET'}`);
 
         if (!this.apiKey || !this.connectionId) {
             logger.warn('⚠️  Telnyx Call Control not configured. Set TELNYX_API_KEY and TELNYX_CONNECTION_ID');
+        }
+
+        // Warn if webhook URL is not production-ready
+        if (this.webhookUrl.includes('localhost') || this.webhookUrl.includes('127.0.0.1')) {
+            logger.error(`❌ [TELNYX-CONFIG] CRITICAL: Webhook URL is not publicly accessible: ${this.webhookUrl}`);
+            logger.error(`   Telnyx cannot reach localhost URLs. Set API_URL to your public domain.`);
         }
     }
 
@@ -30,10 +46,10 @@ class TelnyxCallControl {
         if (!this.apiKey) {
             errors.push('Missing TELNYX_API_KEY. Get your API key from https://portal.telnyx.com/#/app/api-keys');
         } else {
-            // Telnyx API keys typically start with KEY and are 40+ chars
-            const apiKeyPattern = /^KEY[A-Z0-9]{32,}$/i;
+            // Telnyx API keys typically start with KEY and are 32+ chars
+            const apiKeyPattern = /^KEY[A-Z0-9]{28,}$/i;
             if (!apiKeyPattern.test(this.apiKey)) {
-                errors.push(`TELNYX_API_KEY format invalid. Expected format: KEY followed by 32+ alphanumeric characters (total 35+ chars). Current key length: ${this.apiKey.length}. Get a valid key from https://portal.telnyx.com/#/app/api-keys`);
+                errors.push(`TELNYX_API_KEY format invalid. Expected format: KEY followed by 28+ alphanumeric characters. Current value looks malformed (${this.apiKey.substring(0, 6)}...). Get a valid key from https://portal.telnyx.com/#/app/api-keys`);
             }
         }
 
@@ -171,38 +187,9 @@ class TelnyxCallControl {
 
         } catch (error) {
             logger.error(`❌ [TELNYX] Failed to initiate call for ${contact.phone}:`, error.message);
-            
-            // Enhanced error handling with specific error codes
             if (error.response) {
-                const errorData = error.response.data;
-                logger.error(`   Telnyx API Error: ${JSON.stringify(errorData)}`);
-                
-                // Check for specific error codes
-                if (errorData.errors && errorData.errors.length > 0) {
-                    const firstError = errorData.errors[0];
-                    
-                    if (firstError.code === '10009') {
-                        // Authentication failed - API key is invalid
-                        const enhancedError = new Error(
-                            'Telnyx API authentication failed. Your API key is invalid or malformed. ' +
-                            'Please check your TELNYX_API_KEY environment variable. ' +
-                            'Get a valid key from https://portal.telnyx.com/#/app/api-keys'
-                        );
-                        enhancedError.code = 'TELNYX_AUTH_FAILED';
-                        enhancedError.originalError = error;
-                        throw enhancedError;
-                    } else if (firstError.code === '10007') {
-                        // Invalid connection ID
-                        const enhancedError = new Error(
-                            'Telnyx connection ID is invalid. Please check your TELNYX_CONNECTION_ID environment variable.'
-                        );
-                        enhancedError.code = 'TELNYX_INVALID_CONNECTION';
-                        enhancedError.originalError = error;
-                        throw enhancedError;
-                    }
-                }
+                logger.error(`   Telnyx API Error: ${JSON.stringify(error.response.data)}`);
             }
-            
             throw error;
         }
     }
