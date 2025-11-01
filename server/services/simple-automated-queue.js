@@ -108,10 +108,14 @@ class SimpleAutomatedQueue {
             return;
         }
 
-        // Check if there's already an active call for this campaign
+        // CRITICAL: Check if there's already an active call for this campaign
+        // This ensures only one call processes at a time per campaign
         if (this.activeCalls.has(campaignId)) {
-            logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Active call in progress, waiting for completion`);
-            return;
+            const activeCall = this.activeCalls.get(campaignId);
+            const waitTime = Math.floor((new Date() - activeCall.startTime) / 1000);
+            logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Active call in progress (callId: ${activeCall.callId}, wait: ${waitTime}s), waiting for completion`);
+            logger.info(`🔒 [QUEUE] Campaign ${campaignId}: Sequential processing guard - preventing concurrent calls`);
+            return; // Exit early - onCallCompleted will schedule next contact when current call finishes
         }
 
         try {
@@ -369,13 +373,30 @@ class SimpleAutomatedQueue {
                 })
             ]);
 
+            // Get campaign details including script_id
+            const campaignResult = await query(`
+                SELECT script_id, name, type, voice_persona
+                FROM campaigns
+                WHERE id = $1
+            `, [queueState.campaignId]);
+
+            const campaign = campaignResult.rows[0] || {};
+            const scriptId = campaign.script_id || null;
+
+            if (scriptId) {
+                logger.info(`📝 [CALL] ${callId}: Campaign has script_id: ${scriptId}`);
+            } else {
+                logger.warn(`⚠️  [CALL] ${callId}: Campaign ${queueState.campaignId} has no script_id assigned. AI will use default greeting.`);
+            }
+
             // Initiate call via Telnyx
             logger.info(`📞 [CALL] ${callId}: Initiating call via Telnyx...`);
             const result = await telnyxCallControl.makeAICall({
                 callId,
                 contact,
                 campaignId: queueState.campaignId,
-                fromNumber: queueState.phoneNumber
+                fromNumber: queueState.phoneNumber,
+                scriptId: scriptId // Pass script_id to Telnyx metadata
             });
 
             // Update last_contacted timestamp
@@ -440,19 +461,30 @@ class SimpleAutomatedQueue {
         try {
             // Look up the completed call's number
             if (callId) {
-                query(`SELECT to_number FROM calls WHERE id = $1`, [callId])
-                    .then(r => {
-                        const num = r.rows?.[0]?.to_number;
-                        if (num) {
-                            this.inProgressNumbers.delete(String(num).trim());
-                            logger.info(`🔓 [QUEUE] Released number reservation for ${num}`);
-                        }
-                    })
-                    .catch(() => {
-                        // Best-effort release; ignore errors
-                    });
+                const callResult = await query(`SELECT to_number FROM calls WHERE id = $1`, [callId]);
+                const num = callResult.rows?.[0]?.to_number;
+                if (num) {
+                    this.inProgressNumbers.delete(String(num).trim());
+                    logger.info(`🔓 [QUEUE] Campaign ${campaignId}: Released number reservation for ${num}`);
+                } else {
+                    logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Could not find call ${callId} to release number reservation`);
+                }
+            } else if (activeCall && activeCall.contactId) {
+                // Fallback: try to get phone number from contact
+                try {
+                    const contactResult = await query(`SELECT phone FROM contacts WHERE id = $1`, [activeCall.contactId]);
+                    if (contactResult.rows.length > 0) {
+                        const num = contactResult.rows[0].phone;
+                        this.inProgressNumbers.delete(String(num).trim());
+                        logger.info(`🔓 [QUEUE] Campaign ${campaignId}: Released number reservation for ${num} (from contact)`);
+                    }
+                } catch (contactErr) {
+                    logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Could not release number from contact: ${contactErr.message}`);
+                }
             }
-        } catch (_) {}
+        } catch (releaseErr) {
+            logger.warn(`⚠️  [QUEUE] Campaign ${campaignId}: Error releasing number reservation: ${releaseErr.message}`);
+        }
 
         // Update success/fail counts based on outcome
         if (outcome === 'completed' || outcome === 'scheduled' || outcome === 'interested' || outcome === 'answered') {

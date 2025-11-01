@@ -24,36 +24,75 @@ class TelnyxCallControl {
      */
     validateConfig() {
         const errors = [];
+        const warnings = [];
 
+        // API Key validation
         if (!this.apiKey) {
-            errors.push('Missing TELNYX_API_KEY');
-        } else if (!/^KEY[A-Z0-9]{10,}$/i.test(this.apiKey)) {
-            errors.push('TELNYX_API_KEY looks malformed');
+            errors.push('Missing TELNYX_API_KEY. Get your API key from https://portal.telnyx.com/#/app/api-keys');
+        } else {
+            // Telnyx API keys typically start with KEY and are 32+ chars
+            const apiKeyPattern = /^KEY[A-Z0-9]{28,}$/i;
+            if (!apiKeyPattern.test(this.apiKey)) {
+                errors.push(`TELNYX_API_KEY format invalid. Expected format: KEY followed by 28+ alphanumeric characters. Current value looks malformed (${this.apiKey.substring(0, 6)}...). Get a valid key from https://portal.telnyx.com/#/app/api-keys`);
+            }
         }
 
+        // Connection ID validation
         if (!this.connectionId) {
-            errors.push('Missing TELNYX_CONNECTION_ID');
+            errors.push('Missing TELNYX_CONNECTION_ID. Get your Connection ID from https://portal.telnyx.com/#/app/call-control/applications');
+        } else {
+            // Connection IDs are typically numeric strings
+            if (!/^\d+$/.test(this.connectionId)) {
+                warnings.push(`TELNYX_CONNECTION_ID format may be invalid. Expected numeric string.`);
+            }
         }
 
-        if (!this.webhookUrl) {
-            errors.push('Missing API_URL for webhook URL');
-        } else if (/localhost|127\.0\.0\.1/i.test(this.webhookUrl)) {
-            logger.warn(`⚠️  Telnyx webhook_url points to a localhost address (${this.webhookUrl}). Webhooks will NOT reach your server unless you expose a public URL.`);
+        // Phone Number validation
+        if (!this.phoneNumber) {
+            warnings.push('TELNYX_PHONE_NUMBER not set. Using default from connection if available.');
         }
 
-        if (errors.length) {
+        // Webhook URL validation
+        if (!process.env.API_URL) {
+            errors.push('Missing API_URL environment variable. This must be your public server URL (e.g., https://yourdomain.com)');
+        } else {
+            const apiUrl = process.env.API_URL.toLowerCase();
+            // Check for localhost patterns
+            if (/localhost|127\.0\.0\.1|0\.0\.0\.0|::1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\./.test(apiUrl)) {
+                errors.push(`API_URL is set to a local/private address (${process.env.API_URL}). Telnyx webhooks require a publicly accessible URL. Use your production domain (e.g., https://yourdomain.com) or a tunneling service like ngrok for testing.`);
+            } else if (!apiUrl.startsWith('http://') && !apiUrl.startsWith('https://')) {
+                errors.push(`API_URL must start with http:// or https://. Current value: ${process.env.API_URL}`);
+            } else if (!apiUrl.startsWith('https://')) {
+                warnings.push(`API_URL uses http:// instead of https://. Telnyx may require HTTPS for webhooks.`);
+            }
+        }
+
+        // Log warnings (non-blocking)
+        if (warnings.length > 0) {
+            warnings.forEach(warning => logger.warn(`⚠️  [TELNYX-CONFIG] ${warning}`));
+        }
+
+        // Throw errors (blocking)
+        if (errors.length > 0) {
             const message = `Telnyx configuration invalid: ${errors.join('; ')}`;
-            logger.error(message);
+            logger.error(`❌ [TELNYX-CONFIG] ${message}`);
             const error = new Error(message);
             error.code = 'TELNYX_CONFIG_INVALID';
+            error.details = errors;
             throw error;
         }
+
+        logger.info(`✅ [TELNYX-CONFIG] Configuration validated successfully`);
+        logger.info(`   API Key: ${this.apiKey ? this.apiKey.substring(0, 10) + '...' : 'NOT SET'}`);
+        logger.info(`   Connection ID: ${this.connectionId || 'NOT SET'}`);
+        logger.info(`   Phone Number: ${this.phoneNumber || 'NOT SET'}`);
+        logger.info(`   Webhook URL: ${this.webhookUrl}`);
     }
 
     /**
      * Initiate automated AI call via Telnyx
      */
-    async makeAICall({ callId, contact, campaignId, fromNumber }) {
+    async makeAICall({ callId, contact, campaignId, fromNumber, scriptId }) {
         try {
             // Validate configuration and provide helpful diagnostics early
             this.validateConfig();
@@ -65,7 +104,8 @@ class TelnyxCallControl {
                 campaignId,
                 organizationId: contact.organization_id,
                 contactName: `${contact.first_name} ${contact.last_name}`,
-                automated: true
+                automated: true,
+                scriptId: scriptId || null // Pass script_id through to webhooks
             };
 
             // Encode metadata as base64 for client_state

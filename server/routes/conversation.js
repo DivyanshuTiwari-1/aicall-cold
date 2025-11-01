@@ -90,23 +90,37 @@ router.post('/process', async(req, res) => {
         const conversationHistory = historyResult.rows.map(row => row.event_data);
 
         // Get active scripts for this campaign
-        const scriptsResult = await query(`
-            SELECT type, content, variables, confidence_threshold
-            FROM scripts
-            WHERE organization_id = $1 AND is_active = true
-            ORDER BY type, created_at DESC
-        `, [req.organizationId]);
-
+        // If script_content is provided in context (from campaign script_id), use it preferentially
         const scripts = {};
-        scriptsResult.rows.forEach(script => {
-            if (!scripts[script.type]) {
-                scripts[script.type] = {
-                    content: script.content,
-                    variables: script.variables,
-                    confidence_threshold: script.confidence_threshold
-                };
-            }
-        });
+
+        if (context?.script_content) {
+            // Use script content from campaign (already personalized)
+            logger.info(`📝 [CONVERSATION] Using campaign script content (${context.script_content.length} chars)`);
+            scripts['main_pitch'] = {
+                content: context.script_content,
+                variables: {},
+                confidence_threshold: 0.7
+            };
+        } else {
+            // Fallback to organization scripts
+            logger.info(`📝 [CONVERSATION] No campaign script provided, using organization scripts`);
+            const scriptsResult = await query(`
+                SELECT type, content, variables, confidence_threshold
+                FROM scripts
+                WHERE organization_id = $1 AND is_active = true
+                ORDER BY type, created_at DESC
+            `, [req.organizationId]);
+
+            scriptsResult.rows.forEach(script => {
+                if (!scripts[script.type]) {
+                    scripts[script.type] = {
+                        content: script.content,
+                        variables: script.variables,
+                        confidence_threshold: script.confidence_threshold
+                    };
+                }
+            });
+        }
 
         // Query knowledge base for FAQ answers (ENHANCED VERSION)
         const enhancedKnowledge = require('../services/enhanced-knowledge');
@@ -121,6 +135,51 @@ router.post('/process', async(req, res) => {
         const knowledgeResult = {
             rows: knowledgeResults || []
         };
+
+        // Handle initial greeting with script content
+        if (user_input === 'initial_greeting' || user_input.toLowerCase() === 'initial_greeting') {
+            logger.info(`👋 [CONVERSATION] Generating initial greeting`);
+
+            let greeting = "Hello! Thank you for answering. I'm calling to share some information that might interest you. How are you doing today?";
+
+            // Use script content if available (from campaign script_id)
+            if (context?.script_content && scripts['main_pitch']) {
+                const scriptContent = scripts['main_pitch'].content;
+                // Extract first sentence or first 200 chars as greeting
+                const firstSentence = scriptContent.split('.')[0];
+                if (firstSentence && firstSentence.length > 10) {
+                    greeting = firstSentence + '.';
+                    // If script has more, add a smooth transition
+                    const rest = scriptContent.substring(firstSentence.length).trim();
+                    if (rest.length > 0) {
+                        greeting += " " + rest.substring(0, 200) + (rest.length > 200 ? '...' : '');
+                    }
+                } else {
+                    // Use first part of script
+                    greeting = scriptContent.substring(0, 250) + (scriptContent.length > 250 ? '...' : '');
+                }
+                logger.info(`✅ [CONVERSATION] Using campaign script for initial greeting`);
+            } else if (scripts['main_pitch']) {
+                // Use organization's main_pitch script
+                const scriptContent = scripts['main_pitch'].content;
+                const firstSentence = scriptContent.split('.')[0];
+                greeting = firstSentence && firstSentence.length > 10 ? firstSentence + '.' : scriptContent.substring(0, 250);
+                logger.info(`✅ [CONVERSATION] Using organization script for initial greeting`);
+            } else {
+                logger.info(`ℹ️  [CONVERSATION] No script available, using default greeting`);
+            }
+
+            return res.json({
+                success: true,
+                answer: greeting,
+                confidence: 0.9,
+                should_fallback: false,
+                intent: 'greeting',
+                emotion: 'neutral',
+                suggested_actions: [],
+                script_references: scripts['main_pitch'] ? ['campaign_script'] : []
+            });
+        }
 
         // Analyze user intent and emotion using enhanced engine
         const intentAnalysis = conversationEngine.analyzeIntent(user_input, conversationHistory);
@@ -572,6 +631,10 @@ class ConversationEngine {
             objection_type: intentAnalysis.objectionType
         };
 
+        // Use script content as base response if available (prefer campaign script)
+        const mainScript = scripts['main_pitch']?.content;
+        let useScriptContent = false;
+
         // Handle objections with specific responses
         if (intentAnalysis.isObjection && intentAnalysis.handler) {
             const handler = intentAnalysis.handler;
@@ -581,18 +644,16 @@ class ConversationEngine {
             response.suggested_actions.push(handler.followUp);
             response.script_references.push('objection_handling');
         }
-
         // Handle buying signals
-        if (intentAnalysis.isClosingOpportunity) {
+        else if (intentAnalysis.isClosingOpportunity) {
             response.answer = "That's great! I'd love to get you set up. What's the best way to move forward?";
             response.confidence = 0.9;
             response.should_fallback = false;
             response.suggested_actions.push('schedule_meeting', 'send_proposal');
             response.script_references.push('closing');
         }
-
         // Handle specific emotions
-        if (emotionAnalysis.action) {
+        else if (emotionAnalysis.action) {
             switch (emotionAnalysis.action) {
                 case 'provide_demo':
                     response.answer = "I'd be happy to show you a quick demo. What would you like to see first?";
@@ -610,6 +671,26 @@ class ConversationEngine {
                     response.should_fallback = true;
                     response.suggested_actions.push('add_to_dnc', 'end_call');
                     break;
+                default:
+                    useScriptContent = true; // Use script for general responses
+            }
+        } else {
+            // No specific handler - use script content if available
+            useScriptContent = true;
+        }
+
+        // Use script content for general/neutral responses
+        if (useScriptContent && mainScript) {
+            // Extract relevant portion from script based on conversation context
+            // For now, use a portion of the script content
+            const sentences = mainScript.split(/[.!?]+/).filter(s => s.trim().length > 10);
+            if (sentences.length > 0) {
+                // Use first 2-3 sentences from script
+                const selectedSentences = sentences.slice(0, Math.min(3, sentences.length));
+                response.answer = selectedSentences.join('. ').trim() + '.';
+                response.confidence = 0.7;
+                response.should_fallback = false;
+                response.script_references.push('campaign_script');
             }
         }
 

@@ -420,20 +420,30 @@ router.post('/telnyx', async (req, res) => {
 
                 // Update status to ringing and broadcast
                 if (metadata.callId && metadata.organizationId) {
-                    await query(`
-                        UPDATE calls
-                        SET status = 'ringing', updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $1
-                    `, [metadata.callId]);
+                    try {
+                        await query(`
+                            UPDATE calls
+                            SET status = 'ringing', updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [metadata.callId]);
 
-                    logger.info(`✅ [WEBHOOK] Call status updated to 'ringing'`);
+                        logger.info(`✅ [WEBHOOK] Call status updated to 'ringing'`);
+                    } catch (dbErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to update call status to ringing:`, dbErr);
+                    }
 
-                    WebSocketBroadcaster.broadcastCallStatusUpdate(
-                        metadata.organizationId,
-                        metadata.callId,
-                        'ringing',
-                        { callControlId, message: 'Call is ringing...' }
-                    );
+                    // Broadcast to WebSocket (non-blocking)
+                    try {
+                        WebSocketBroadcaster.broadcastCallStatusUpdate(
+                            metadata.organizationId,
+                            metadata.callId,
+                            'ringing',
+                            { callControlId, message: 'Call is ringing...' }
+                        );
+                        logger.info(`✅ [WEBHOOK] WebSocket broadcast sent for call initiated`);
+                    } catch (wsErr) {
+                        logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                    }
                 }
                 logger.info(`📞 [WEBHOOK] ============================================`);
                 break;
@@ -448,27 +458,42 @@ router.post('/telnyx', async (req, res) => {
                 logger.info(`   Status: Customer picked up!`);
 
                 // CRITICAL: Answer the call first before doing anything!
-                const telnyxCallControl = require('../services/telnyx-call-control');
-                logger.info(`📞 [WEBHOOK] Sending ANSWER command to Telnyx...`);
-                await telnyxCallControl.answerCall(callControlId);
-                logger.info(`✅ [WEBHOOK] System answered call - Connection established!`);
+                try {
+                    const telnyxCallControl = require('../services/telnyx-call-control');
+                    logger.info(`📞 [WEBHOOK] Sending ANSWER command to Telnyx...`);
+                    await telnyxCallControl.answerCall(callControlId);
+                    logger.info(`✅ [WEBHOOK] System answered call - Connection established!`);
+                } catch (answerErr) {
+                    logger.error(`❌ [WEBHOOK] Failed to answer call:`, answerErr);
+                    // Continue anyway - call may already be answered
+                }
 
                 // Update status to connected and broadcast
                 if (metadata.callId && metadata.organizationId) {
-                    await query(`
-                        UPDATE calls
-                        SET status = 'connected', answered = true, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $1
-                    `, [metadata.callId]);
+                    try {
+                        await query(`
+                            UPDATE calls
+                            SET status = 'connected', answered = true, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [metadata.callId]);
 
-                    logger.info(`✅ [WEBHOOK] Call status updated to 'connected' in database`);
+                        logger.info(`✅ [WEBHOOK] Call status updated to 'connected' in database`);
+                    } catch (dbErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to update call status to connected:`, dbErr);
+                    }
 
-                    WebSocketBroadcaster.broadcastCallStatusUpdate(
-                        metadata.organizationId,
-                        metadata.callId,
-                        'connected',
-                        { callControlId, message: 'Customer answered!' }
-                    );
+                    // Broadcast to WebSocket (non-blocking)
+                    try {
+                        WebSocketBroadcaster.broadcastCallStatusUpdate(
+                            metadata.organizationId,
+                            metadata.callId,
+                            'connected',
+                            { callControlId, message: 'Customer answered!' }
+                        );
+                        logger.info(`✅ [WEBHOOK] WebSocket broadcast sent for call answered`);
+                    } catch (wsErr) {
+                        logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                    }
                 }
 
                 // Now start AI conversation
@@ -476,7 +501,12 @@ router.post('/telnyx', async (req, res) => {
                 logger.info(`🤖 [WEBHOOK] STARTING AI CONVERSATION ENGINE...`);
                 logger.info(`🤖 [WEBHOOK] AI will now talk to customer`);
                 logger.info(`🤖 [WEBHOOK] ============================================`);
-                await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
+                try {
+                    await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
+                } catch (convErr) {
+                    logger.error(`❌ [WEBHOOK] Failed to start AI conversation:`, convErr);
+                    // Don't throw - webhook must return 200
+                }
                 break;
 
             case 'call.playback.ended':
@@ -486,16 +516,24 @@ router.post('/telnyx', async (req, res) => {
 
                 // Broadcast: AI finished talking, listening for customer
                 if (metadata.callId && metadata.organizationId) {
-                    WebSocketBroadcaster.broadcastCallStatusUpdate(
-                        metadata.organizationId,
-                        metadata.callId,
-                        'in_progress',
-                        { callControlId, message: 'Listening to customer...', phase: 'listening' }
-                    );
+                    try {
+                        WebSocketBroadcaster.broadcastCallStatusUpdate(
+                            metadata.organizationId,
+                            metadata.callId,
+                            'in_progress',
+                            { callControlId, message: 'Listening to customer...', phase: 'listening' }
+                        );
+                    } catch (wsErr) {
+                        logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                    }
                 }
                 // AI finished speaking - start recording customer
-                await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
-                logger.info(`✅ [WEBHOOK] Recording started for customer response`);
+                try {
+                    await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
+                    logger.info(`✅ [WEBHOOK] Recording started for customer response`);
+                } catch (recordErr) {
+                    logger.error(`❌ [WEBHOOK] Failed to start recording:`, recordErr);
+                }
                 break;
 
             case 'call.recording.saved':
@@ -505,12 +543,16 @@ router.post('/telnyx', async (req, res) => {
 
                 // Broadcast: Customer finished talking, AI is processing
                 if (metadata.callId && metadata.organizationId) {
-                    WebSocketBroadcaster.broadcastCallStatusUpdate(
-                        metadata.organizationId,
-                        metadata.callId,
-                        'in_progress',
-                        { callControlId, message: 'AI processing response...', phase: 'processing' }
-                    );
+                    try {
+                        WebSocketBroadcaster.broadcastCallStatusUpdate(
+                            metadata.organizationId,
+                            metadata.callId,
+                            'in_progress',
+                            { callControlId, message: 'AI processing response...', phase: 'processing' }
+                        );
+                    } catch (wsErr) {
+                        logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                    }
                 }
 
                 const recordingUrl = event.payload?.recording_urls?.wav || event.payload?.public_recording_url;
@@ -518,8 +560,12 @@ router.post('/telnyx', async (req, res) => {
                 if (recordingUrl) {
                     logger.info(`📥 [WEBHOOK] Recording URL: ${recordingUrl.substring(0, 50)}...`);
                     // Customer finished speaking - transcribe and respond
-                    await telnyxAIConversation.handleRecordingSaved(callControlId, recordingUrl, metadata);
-                    logger.info(`✅ [WEBHOOK] Recording processed successfully`);
+                    try {
+                        await telnyxAIConversation.handleRecordingSaved(callControlId, recordingUrl, metadata);
+                        logger.info(`✅ [WEBHOOK] Recording processed successfully`);
+                    } catch (processErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to process recording:`, processErr);
+                    }
                 } else {
                     logger.warn('⚠️  [WEBHOOK] Recording URL not found in webhook payload');
                 }
@@ -531,33 +577,70 @@ router.post('/telnyx', async (req, res) => {
                 logger.info(`   Call ID (DB): ${metadata.callId}`);
                 logger.info(`   Hangup Source: ${event.payload?.hangup_source}`);
 
-                const duration = event.payload?.hangup_source ?
+                const duration = event.payload?.hangup_source && event.payload?.end_time && event.payload?.start_time ?
                     Math.floor((event.payload.end_time - event.payload.start_time) / 1000) :
                     0;
 
                 logger.info(`   Duration: ${duration}s`);
 
+                // Update call status to completed in database first
+                if (metadata.callId) {
+                    try {
+                        await query(`
+                            UPDATE calls
+                            SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [metadata.callId]);
+                        logger.info(`✅ [WEBHOOK] Call status updated to 'completed'`);
+                    } catch (dbErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to update call status:`, dbErr);
+                    }
+                }
+
                 // Call ended - save transcript and update database
                 logger.info(`📝 [WEBHOOK] Processing call completion...`);
-                await telnyxAIConversation.handleCallEnded(callControlId, metadata, duration);
+                try {
+                    await telnyxAIConversation.handleCallEnded(callControlId, metadata, duration);
+                } catch (endErr) {
+                    logger.error(`❌ [WEBHOOK] Failed to process call end:`, endErr);
+                }
+
+                // Broadcast call ended (non-blocking)
+                if (metadata.callId && metadata.organizationId) {
+                    try {
+                        WebSocketBroadcaster.broadcastCallEnded(
+                            metadata.organizationId,
+                            metadata.callId,
+                            { outcome: metadata.outcome || 'completed', duration }
+                        );
+                        logger.info(`✅ [WEBHOOK] WebSocket broadcast sent for call ended`);
+                    } catch (wsErr) {
+                        logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                    }
+                }
 
                 // CRITICAL: Notify queue that call completed so next contact can be processed
                 if (metadata.campaignId && metadata.automated) {
                     logger.info(`🎯 [WEBHOOK] Notifying queue of call completion...`);
                     logger.info(`   Campaign ID: ${metadata.campaignId}`);
 
-                    // Get final call outcome from database
-                    const callOutcomeResult = await query(`
-                        SELECT outcome FROM calls WHERE id = $1
-                    `, [metadata.callId]);
+                    try {
+                        // Get final call outcome from database
+                        const callOutcomeResult = await query(`
+                            SELECT outcome FROM calls WHERE id = $1
+                        `, [metadata.callId]);
 
-                    const outcome = callOutcomeResult.rows[0]?.outcome || 'completed';
-                    logger.info(`   Final Outcome: ${outcome}`);
+                        const outcome = callOutcomeResult.rows[0]?.outcome || 'completed';
+                        logger.info(`   Final Outcome: ${outcome}`);
 
-                    // Import and notify queue
-                    const simpleQueue = require('../services/simple-automated-queue');
-                    simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, outcome);
-                    logger.info(`✅ [WEBHOOK] Queue notified of completion`);
+                        // Import and notify queue
+                        const simpleQueue = require('../services/simple-automated-queue');
+                        await simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, outcome);
+                        logger.info(`✅ [WEBHOOK] Queue notified of completion`);
+                    } catch (queueErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to notify queue:`, queueErr);
+                        // Don't throw - webhook must return 200
+                    }
                 }
                 break;
 
@@ -570,27 +653,43 @@ router.post('/telnyx', async (req, res) => {
                 if (event.payload?.result === 'human') {
                     logger.info(`✅ [WEBHOOK] Human detected, treating as answered call`);
                     // Human answered, treat as call.answered
-                    const telnyxCallControl2 = require('../services/telnyx-call-control');
-                    await telnyxCallControl2.answerCall(callControlId);
-                    await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
+                    try {
+                        const telnyxCallControl2 = require('../services/telnyx-call-control');
+                        await telnyxCallControl2.answerCall(callControlId);
+                        await telnyxAIConversation.handleCallAnswered(callControlId, metadata);
+                    } catch (humanErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to handle human detection:`, humanErr);
+                    }
                 } else {
                     logger.info(`📞 [WEBHOOK] Machine/voicemail detected, hanging up`);
                     // Machine/voicemail detected, hangup
-                    const telnyxCallControl2 = require('../services/telnyx-call-control');
-                    await telnyxCallControl2.hangupCall(callControlId);
+                    try {
+                        const telnyxCallControl2 = require('../services/telnyx-call-control');
+                        await telnyxCallControl2.hangupCall(callControlId);
+                    } catch (hangupErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to hangup call:`, hangupErr);
+                    }
 
                     // Update call outcome
                     if (metadata.callId) {
-                        await query(`
-                            UPDATE calls
-                            SET status = 'completed', outcome = 'voicemail', updated_at = CURRENT_TIMESTAMP
-                            WHERE id = $1
-                        `, [metadata.callId]);
+                        try {
+                            await query(`
+                                UPDATE calls
+                                SET status = 'completed', outcome = 'voicemail', updated_at = CURRENT_TIMESTAMP
+                                WHERE id = $1
+                            `, [metadata.callId]);
 
-                        // Notify queue
-                        if (metadata.campaignId && metadata.automated) {
-                            const simpleQueue = require('../services/simple-automated-queue');
-                            simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'voicemail');
+                            // Notify queue
+                            if (metadata.campaignId && metadata.automated) {
+                                try {
+                                    const simpleQueue = require('../services/simple-automated-queue');
+                                    await simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'voicemail');
+                                } catch (queueErr) {
+                                    logger.error(`❌ [WEBHOOK] Failed to notify queue:`, queueErr);
+                                }
+                            }
+                        } catch (dbErr) {
+                            logger.error(`❌ [WEBHOOK] Failed to update call status:`, dbErr);
                         }
                     }
                 }
@@ -600,7 +699,11 @@ router.post('/telnyx', async (req, res) => {
                 // Similar to playback.ended but for TTS via Telnyx
                 logger.info(`🗣️  [WEBHOOK] call.speak.ended received`);
                 logger.info(`   Call Control ID: ${callControlId}`);
-                await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
+                try {
+                    await telnyxAIConversation.handlePlaybackEnded(callControlId, metadata);
+                } catch (speakErr) {
+                    logger.error(`❌ [WEBHOOK] Failed to handle speak ended:`, speakErr);
+                }
                 break;
 
             case 'call.initiated.timeout':
@@ -611,31 +714,48 @@ router.post('/telnyx', async (req, res) => {
                 logger.warn(`   Call timed out - no answer`);
 
                 if (metadata.callId) {
-                    await query(`
-                        UPDATE calls
-                        SET status = 'completed', outcome = 'no_answer', updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $1
-                    `, [metadata.callId]);
+                    try {
+                        await query(`
+                            UPDATE calls
+                            SET status = 'completed', outcome = 'no_answer', updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [metadata.callId]);
 
-                    await query(`
-                        UPDATE contacts
-                        SET status = 'contacted', updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $2
-                    `, [metadata.contactId]);
+                        if (metadata.contactId) {
+                            await query(`
+                                UPDATE contacts
+                                SET status = 'contacted', updated_at = CURRENT_TIMESTAMP
+                                WHERE id = $1
+                            `, [metadata.contactId]);
+                        }
 
-                    logger.info(`✅ [WEBHOOK] Call marked as no_answer`);
+                        logger.info(`✅ [WEBHOOK] Call marked as no_answer`);
+                    } catch (dbErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to update call/contact status:`, dbErr);
+                    }
 
-                    WebSocketBroadcaster.broadcastCallEnded(
-                        metadata.organizationId,
-                        metadata.callId,
-                        { outcome: 'no_answer', duration: 0 }
-                    );
+                    // Broadcast call ended (non-blocking)
+                    if (metadata.organizationId) {
+                        try {
+                            WebSocketBroadcaster.broadcastCallEnded(
+                                metadata.organizationId,
+                                metadata.callId,
+                                { outcome: 'no_answer', duration: 0 }
+                            );
+                        } catch (wsErr) {
+                            logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                        }
+                    }
 
                     // Notify queue
                     if (metadata.campaignId && metadata.automated) {
-                        const simpleQueue = require('../services/simple-automated-queue');
-                        simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'no_answer');
-                        logger.info(`✅ [WEBHOOK] Queue notified of timeout`);
+                        try {
+                            const simpleQueue = require('../services/simple-automated-queue');
+                            await simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'no_answer');
+                            logger.info(`✅ [WEBHOOK] Queue notified of timeout`);
+                        } catch (queueErr) {
+                            logger.error(`❌ [WEBHOOK] Failed to notify queue:`, queueErr);
+                        }
                     }
                 }
                 break;
@@ -648,35 +768,47 @@ router.post('/telnyx', async (req, res) => {
                 logger.error(`   Failure Reason: ${event.payload?.hangup_cause || 'Unknown'}`);
 
                 if (metadata.callId) {
-                    await query(`
-                        UPDATE calls
-                        SET status = 'failed',
-                            outcome = 'failed',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $1
-                    `, [metadata.callId]);
+                    try {
+                        await query(`
+                            UPDATE calls
+                            SET status = 'failed',
+                                outcome = 'failed',
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [metadata.callId]);
 
-                    logger.info(`✅ [WEBHOOK] Call marked as failed in database`);
+                        logger.info(`✅ [WEBHOOK] Call marked as failed in database`);
+                    } catch (dbErr) {
+                        logger.error(`❌ [WEBHOOK] Failed to update call status:`, dbErr);
+                    }
 
-                    // Broadcast failure
+                    // Broadcast failure (non-blocking)
                     if (metadata.organizationId) {
-                        WebSocketBroadcaster.broadcastCallStatusUpdate(
-                            metadata.organizationId,
-                            metadata.callId,
-                            'failed',
-                            {
-                                callControlId,
-                                message: 'Call failed',
-                                reason: event.payload?.hangup_cause
-                            }
-                        );
+                        try {
+                            WebSocketBroadcaster.broadcastCallStatusUpdate(
+                                metadata.organizationId,
+                                metadata.callId,
+                                'failed',
+                                {
+                                    callControlId,
+                                    message: 'Call failed',
+                                    reason: event.payload?.hangup_cause
+                                }
+                            );
+                        } catch (wsErr) {
+                            logger.error(`❌ [WEBHOOK] WebSocket broadcast failed (non-blocking):`, wsErr);
+                        }
                     }
 
                     // Notify queue to move to next contact
                     if (metadata.campaignId && metadata.automated) {
-                        const simpleQueue = require('../services/simple-automated-queue');
-                        simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'failed');
-                        logger.info(`✅ [WEBHOOK] Queue notified of call failure`);
+                        try {
+                            const simpleQueue = require('../services/simple-automated-queue');
+                            await simpleQueue.onCallCompleted(metadata.campaignId, metadata.callId, 'failed');
+                            logger.info(`✅ [WEBHOOK] Queue notified of call failure`);
+                        } catch (queueErr) {
+                            logger.error(`❌ [WEBHOOK] Failed to notify queue:`, queueErr);
+                        }
                     }
                 }
                 break;

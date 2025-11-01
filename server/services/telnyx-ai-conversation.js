@@ -24,13 +24,57 @@ class TelnyxAIConversation {
      * Handle call answered - start AI conversation
      */
     async handleCallAnswered(callControlId, metadata) {
-        const { callId, campaignId, organizationId, contactId } = metadata;
+        const { callId, campaignId, organizationId, contactId, scriptId } = metadata;
 
         try {
             logger.info(`🤖 [AI-CONVERSATION] Call answered: ${callId}`);
             logger.info(`   Starting AI conversation...`);
             logger.info(`   Contact ID: ${contactId}`);
             logger.info(`   Campaign ID: ${campaignId}`);
+            logger.info(`   Script ID: ${scriptId || 'none'}`);
+
+            // Get contact details for script personalization
+            const contactResult = await query(`
+                SELECT first_name, last_name, company, title, phone
+                FROM contacts
+                WHERE id = $1
+            `, [contactId]);
+
+            const contact = contactResult.rows[0] || {};
+
+            // Retrieve campaign script content if script_id is provided
+            let scriptContent = null;
+            if (scriptId) {
+                try {
+                    const scriptResult = await query(`
+                        SELECT content, variables, type
+                        FROM scripts
+                        WHERE id = $1 AND organization_id = $2 AND is_active = true
+                    `, [scriptId, organizationId]);
+
+                    if (scriptResult.rows.length > 0) {
+                        scriptContent = scriptResult.rows[0].content;
+
+                        // Replace script variables with contact data
+                        scriptContent = scriptContent
+                            .replace(/\{first_name\}/g, contact.first_name || 'there')
+                            .replace(/\{name\}/g, contact.first_name || 'there')
+                            .replace(/\{last_name\}/g, contact.last_name || '')
+                            .replace(/\{company\}/g, contact.company || 'your company')
+                            .replace(/\{title\}/g, contact.title || '');
+
+                        logger.info(`✅ [AI-CONVERSATION] Campaign script loaded and personalized`);
+                        logger.info(`   Script preview: "${scriptContent.substring(0, 100)}..."`);
+                    } else {
+                        logger.warn(`⚠️  [AI-CONVERSATION] Script ID ${scriptId} not found or inactive, using default greeting`);
+                    }
+                } catch (scriptErr) {
+                    logger.error(`❌ [AI-CONVERSATION] Failed to load script:`, scriptErr);
+                    // Continue with default greeting
+                }
+            } else {
+                logger.info(`ℹ️  [AI-CONVERSATION] No script_id provided, using default greeting`);
+            }
 
             // Update call status
             await query(`
@@ -49,22 +93,49 @@ class TelnyxAIConversation {
                 timestamp: new Date().toISOString()
             });
 
-            // Initialize conversation state
+            // Get campaign voice_persona for TTS
+            let voicePersona = 'amy'; // Default voice
+            try {
+                const campaignResult = await query(`
+                    SELECT voice_persona
+                    FROM campaigns
+                    WHERE id = $1
+                `, [campaignId]);
+
+                if (campaignResult.rows.length > 0 && campaignResult.rows[0].voice_persona) {
+                    // Map voice_persona to Piper voice
+                    const voiceMap = {
+                        'professional': 'ryan',
+                        'casual': 'amy',
+                        'empathetic': 'kristin',
+                        'enthusiastic': 'amy'
+                    };
+                    voicePersona = voiceMap[campaignResult.rows[0].voice_persona] || 'amy';
+                    logger.info(`📢 [AI-CONVERSATION] Campaign voice_persona: ${campaignResult.rows[0].voice_persona} -> ${voicePersona}`);
+                }
+            } catch (voiceErr) {
+                logger.warn(`⚠️  [AI-CONVERSATION] Failed to get campaign voice_persona, using default:`, voiceErr.message);
+            }
+
+            // Initialize conversation state with script content and voice
             this.conversationStates.set(callId, {
                 callControlId,
                 callId,
                 campaignId,
                 organizationId,
                 contactId,
+                scriptId: scriptId || null,
+                scriptContent: scriptContent || null,
+                voicePersona: voicePersona, // Store voice for subsequent TTS calls
                 turnNumber: 0,
                 conversationHistory: []
             });
 
-            logger.info(`🤖 [AI-CONVERSATION] Conversation state initialized`);
+            logger.info(`🤖 [AI-CONVERSATION] Conversation state initialized with script`);
 
-            // Get initial greeting from conversation engine
+            // Get initial greeting from conversation engine (pass script content)
             logger.info(`🤖 [AI-CONVERSATION] Getting initial greeting...`);
-            const greeting = await this.getAIResponse(callId, 'initial_greeting', campaignId, 0);
+            const greeting = await this.getAIResponse(callId, 'initial_greeting', campaignId, 0, [], scriptContent);
             logger.info(`💬 [AI-CONVERSATION] Turn 0 (Greeting): "${greeting.answer}"`);
 
 
@@ -75,15 +146,41 @@ class TelnyxAIConversation {
                 confidence: greeting.confidence
             });
 
-            // Generate TTS audio
+            // Get voice_persona from conversation state
+            const state = this.conversationStates.get(callId);
+            const voicePersona = state?.voicePersona || 'amy';
+
+            // Generate TTS audio with campaign voice
             logger.info(`🎤 [AI-CONVERSATION] Generating TTS for greeting...`);
-            const audioUrl = await this.generateTTS(greeting.answer);
-            logger.info(`✅ [AI-CONVERSATION] TTS generated: ${audioUrl.substring(0, 50)}...`);
+            let audioUrl;
+            try {
+                audioUrl = await this.generateTTS(greeting.answer, voicePersona, callId);
+                logger.info(`✅ [AI-CONVERSATION] TTS generated: ${audioUrl.substring(0, 50)}...`);
+            } catch (ttsErr) {
+                logger.error(`❌ [AI-CONVERSATION] TTS generation failed:`, ttsErr.message);
+                // Fallback: Use Telnyx TTS (costs money but works)
+                logger.warn(`⚠️  [AI-CONVERSATION] Falling back to Telnyx TTS...`);
+                try {
+                    await telnyxCallControl.speakText(callControlId, greeting.answer, voicePersona === 'ryan' ? 'male' : 'female');
+                    logger.info(`✅ [AI-CONVERSATION] Fallback TTS (Telnyx) started`);
+                    return; // Exit early - Telnyx TTS doesn't need playback command
+                } catch (telnyxTtsErr) {
+                    logger.error(`❌ [AI-CONVERSATION] Telnyx TTS fallback also failed:`, telnyxTtsErr.message);
+                    throw ttsErr; // Re-throw original error
+                }
+            }
 
             // Play to customer
             logger.info(`🔊 [AI-CONVERSATION] Playing greeting to customer...`);
-            await telnyxCallControl.playAudio(callControlId, audioUrl);
-            logger.info(`✅ [AI-CONVERSATION] Greeting playback started`);
+            try {
+                await telnyxCallControl.playAudio(callControlId, audioUrl);
+                logger.info(`✅ [AI-CONVERSATION] Greeting playback started`);
+            } catch (playErr) {
+                logger.error(`❌ [AI-CONVERSATION] Failed to play audio:`, playErr.message);
+                // Try fallback Telnyx TTS
+                logger.warn(`⚠️  [AI-CONVERSATION] Falling back to Telnyx TTS for playback...`);
+                await telnyxCallControl.speakText(callControlId, greeting.answer, voicePersona === 'ryan' ? 'male' : 'female');
+            }
 
         } catch (error) {
             logger.error(`❌ [AI-CONVERSATION] Error handling call answered for ${callId}:`, error);
@@ -175,14 +272,15 @@ class TelnyxAIConversation {
             // Increment turn
             state.turnNumber++;
 
-            // Process with AI conversation engine
+            // Process with AI conversation engine (pass script content from state)
             logger.info(`🤖 [AI-CONVERSATION] Processing AI response for turn ${state.turnNumber}...`);
             const aiResponse = await this.getAIResponse(
                 callId,
                 transcript,
                 campaignId,
                 state.turnNumber,
-                state.conversationHistory
+                state.conversationHistory,
+                state.scriptContent // Pass script content to conversation engine
             );
 
             logger.info(`💬 [AI-CONVERSATION] Turn ${state.turnNumber} - AI: "${aiResponse.answer}"`);
@@ -221,9 +319,16 @@ class TelnyxAIConversation {
 
                 logger.info(`AI suggests ending call ${callId}`);
 
-                // Play final response
-                const audioUrl = await this.generateTTS(aiResponse.answer);
-                await telnyxCallControl.playAudio(callControlId, audioUrl);
+                // Play final response with voice from state
+                const voicePersona = state.voicePersona || 'amy';
+                let audioUrl;
+                try {
+                    audioUrl = await this.generateTTS(aiResponse.answer, voicePersona, callId);
+                    await telnyxCallControl.playAudio(callControlId, audioUrl);
+                } catch (ttsErr) {
+                    logger.error(`❌ [AI-CONVERSATION] TTS failed for final response, using Telnyx fallback:`, ttsErr.message);
+                    await telnyxCallControl.speakText(callControlId, aiResponse.answer, voicePersona === 'ryan' ? 'male' : 'female');
+                }
 
                 // Wait a bit then hangup
                 setTimeout(() => {
@@ -233,11 +338,34 @@ class TelnyxAIConversation {
                 return;
             }
 
-            // Generate TTS for AI response
-            const audioUrl = await this.generateTTS(aiResponse.answer);
+            // Generate TTS for AI response with voice from state
+            const voicePersona = state.voicePersona || 'amy';
+            let audioUrl;
+            try {
+                audioUrl = await this.generateTTS(aiResponse.answer, voicePersona, callId);
+                logger.info(`✅ [AI-CONVERSATION] TTS generated for turn ${state.turnNumber}`);
+            } catch (ttsErr) {
+                logger.error(`❌ [AI-CONVERSATION] TTS generation failed, using Telnyx fallback:`, ttsErr.message);
+                // Fallback to Telnyx TTS
+                try {
+                    await telnyxCallControl.speakText(callControlId, aiResponse.answer, voicePersona === 'ryan' ? 'male' : 'female');
+                    logger.info(`✅ [AI-CONVERSATION] Fallback TTS (Telnyx) started`);
+                    return; // Exit early - Telnyx TTS doesn't need playback command
+                } catch (telnyxTtsErr) {
+                    logger.error(`❌ [AI-CONVERSATION] Telnyx TTS fallback also failed:`, telnyxTtsErr.message);
+                    throw ttsErr; // Re-throw original error
+                }
+            }
 
             // Play to customer
-            await telnyxCallControl.playAudio(callControlId, audioUrl);
+            try {
+                await telnyxCallControl.playAudio(callControlId, audioUrl);
+                logger.info(`✅ [AI-CONVERSATION] AI response playback started`);
+            } catch (playErr) {
+                logger.error(`❌ [AI-CONVERSATION] Failed to play audio, using Telnyx TTS fallback:`, playErr.message);
+                // Fallback to Telnyx TTS
+                await telnyxCallControl.speakText(callControlId, aiResponse.answer, voicePersona === 'ryan' ? 'male' : 'female');
+            }
 
         } catch (error) {
             logger.error(`❌ Error handling recording for ${callId}:`, error);
@@ -262,26 +390,60 @@ class TelnyxAIConversation {
             this.conversationStates.delete(callId);
 
             // Aggregate transcript from call_events
+            logger.info(`📝 [CALL-END] Collecting conversation transcript for call ${callId}...`);
             const eventsResult = await query(`
-                SELECT event_data
+                SELECT event_data, timestamp
                 FROM call_events
                 WHERE call_id = $1 AND event_type = 'ai_conversation'
                 ORDER BY timestamp ASC
             `, [callId]);
 
+            logger.info(`📝 [CALL-END] Found ${eventsResult.rows.length} conversation turns`);
+
             let transcript = '';
             let lastTurn = null;
+            let turnCount = 0;
 
-            eventsResult.rows.forEach(row => {
+            eventsResult.rows.forEach((row, index) => {
                 const data = row.event_data;
-                if (data.user_input) {
+                const timestamp = row.timestamp ? new Date(row.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '';
+
+                // Format: Turn X [Timestamp]
+                // Customer: [user_input]
+                // AI: [ai_response]
+
+                if (data.user_input && data.user_input !== 'initial_greeting') {
+                    turnCount++;
+                    transcript += `\n--- Turn ${turnCount} ${timestamp ? `[${timestamp}]` : ''} ---\n`;
                     transcript += `Customer: ${data.user_input}\n`;
                 }
+
                 if (data.ai_response) {
-                    transcript += `AI: ${data.ai_response}\n\n`;
+                    if (!data.user_input || data.user_input === 'initial_greeting') {
+                        // Initial greeting - no turn number needed
+                        transcript += `\n--- Opening ${timestamp ? `[${timestamp}]` : ''} ---\n`;
+                    }
+                    transcript += `AI: ${data.ai_response}\n`;
                 }
-                lastTurn = data;
+
+                // Store last turn for outcome determination
+                if (data.user_input && data.user_input !== 'initial_greeting') {
+                    lastTurn = data;
+                } else if (data.ai_response && !lastTurn) {
+                    // If only AI response (greeting), use it for outcome if no other turns
+                    lastTurn = data;
+                }
             });
+
+            // Trim and ensure transcript isn't empty
+            transcript = transcript.trim();
+
+            if (!transcript) {
+                logger.warn(`⚠️  [CALL-END] No conversation transcript found for call ${callId}`);
+                transcript = 'No conversation recorded.';
+            } else {
+                logger.info(`✅ [CALL-END] Built transcript with ${turnCount} turns (${transcript.length} chars)`);
+            }
 
             // Determine outcome based on last turn
             let outcome = 'completed';
@@ -305,22 +467,42 @@ class TelnyxAIConversation {
             const emotion = lastTurn?.emotion || 'neutral';
             const intentScore = lastTurn?.confidence ? parseFloat(lastTurn.confidence) : 0.5;
 
-            // Update call record
-            await query(`
-                UPDATE calls
-                SET
-                    status = 'completed',
-                    outcome = $1,
-                    transcript = $2,
-                    duration = $3,
-                    cost = $4,
-                    emotion = $5,
-                    intent_score = $6,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = $7
-            `, [outcome, transcript, duration, cost, emotion, intentScore, callId]);
+            // Update call record with transcript
+            try {
+                await query(`
+                    UPDATE calls
+                    SET
+                        status = 'completed',
+                        outcome = $1,
+                        transcript = $2,
+                        duration = $3,
+                        cost = $4,
+                        emotion = $5,
+                        intent_score = $6,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $7
+                `, [outcome, transcript, duration, cost, emotion, intentScore, callId]);
 
-            logger.info(`✅ [CALL-END] ${callId}: Outcome=${outcome}, Emotion=${emotion}, Duration=${duration}s, Cost=$${cost.toFixed(4)}`);
+                logger.info(`✅ [CALL-END] ${callId}: Call record updated with transcript`);
+                logger.info(`   Outcome: ${outcome}`);
+                logger.info(`   Emotion: ${emotion}`);
+                logger.info(`   Duration: ${duration}s`);
+                logger.info(`   Cost: $${cost.toFixed(4)}`);
+                logger.info(`   Transcript length: ${transcript.length} chars`);
+            } catch (dbErr) {
+                logger.error(`❌ [CALL-END] Failed to update call record with transcript:`, dbErr);
+                // Try without transcript
+                try {
+                    await query(`
+                        UPDATE calls
+                        SET status = 'completed', outcome = $1, duration = $2, cost = $3, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $4
+                    `, [outcome, duration, cost, callId]);
+                    logger.warn(`⚠️  [CALL-END] Updated call record without transcript`);
+                } catch (fallbackErr) {
+                    logger.error(`❌ [CALL-END] Failed to update call record even without transcript:`, fallbackErr);
+                }
+            }
 
             // Update contact status
             await query(`
@@ -335,17 +517,22 @@ class TelnyxAIConversation {
                 WHERE id = $2
             `, [outcome, contactId]);
 
-            // Broadcast call ended
-            WebSocketBroadcaster.broadcastToOrganization(organizationId, {
-                type: 'call_ended',
-                call_id: callId,
-                outcome,
-                duration,
-                cost,
-                emotion,
-                intent_score: intentScore,
-                timestamp: new Date().toISOString()
-            });
+            // Broadcast call ended with transcript summary
+            try {
+                WebSocketBroadcaster.broadcastCallEnded(organizationId, callId, {
+                    status: 'completed',
+                    outcome,
+                    duration,
+                    cost,
+                    totalTurns: turnCount,
+                    emotion,
+                    intentScore: intentScore,
+                    hasTranscript: transcript && transcript !== 'No conversation recorded.'
+                });
+                logger.info(`📡 [CALL-END] Broadcasted call_ended event via WebSocket`);
+            } catch (wsErr) {
+                logger.error(`❌ [CALL-END] Failed to broadcast call_ended (non-blocking):`, wsErr.message);
+            }
 
             logger.info(`✅ Call ${callId} saved with outcome: ${outcome}`);
 
@@ -374,11 +561,16 @@ class TelnyxAIConversation {
     /**
      * Get AI response from conversation engine
      */
-    async getAIResponse(callId, userInput, campaignId, turnNumber, conversationHistory = []) {
+    async getAIResponse(callId, userInput, campaignId, turnNumber, conversationHistory = [], scriptContent = null) {
         try {
             logger.info(`🤖 [AI-CONVERSATION] Calling conversation engine...`);
             logger.info(`   User Input: "${userInput}"`);
             logger.info(`   Turn Number: ${turnNumber}`);
+            logger.info(`   Script Content: ${scriptContent ? 'Provided (' + scriptContent.length + ' chars)' : 'Not provided'}`);
+
+            // Get conversation state to access script content if available
+            const state = this.conversationStates.get(callId);
+            const scriptToUse = scriptContent || state?.scriptContent || null;
 
             const response = await axios.post(
                 `${this.apiBaseUrl}/api/v1/conversation/process`,
@@ -388,7 +580,8 @@ class TelnyxAIConversation {
                     context: {
                         campaign_id: campaignId,
                         turn: turnNumber,
-                        conversation_history: conversationHistory
+                        conversation_history: conversationHistory,
+                        script_content: scriptToUse // Pass script content to conversation engine
                     }
                 },
                 { timeout: 15000 }
@@ -430,34 +623,66 @@ class TelnyxAIConversation {
 
     /**
      * Generate TTS audio using Piper
+     * @param {string} text - Text to convert to speech
+     * @param {string} voice - Voice to use (amy, ryan, etc.) - can be from campaign voice_persona
+     * @param {string} callId - Optional call ID for logging
      */
-    async generateTTS(text) {
+    async generateTTS(text, voice = 'amy', callId = null) {
         try {
+            logger.info(`🎤 [TTS] Generating TTS for text: "${text.substring(0, 50)}..."`);
+            logger.info(`   Voice: ${voice}`);
+            logger.info(`   Call ID: ${callId || 'N/A'}`);
+
+            // Use public API URL for audio serving (Telnyx needs public URL)
+            const publicApiUrl = process.env.API_URL || this.apiBaseUrl;
+            if (!publicApiUrl || publicApiUrl.includes('localhost')) {
+                logger.error(`❌ [TTS] API_URL must be publicly accessible. Current: ${publicApiUrl}`);
+                throw new Error('API_URL must be publicly accessible for Telnyx to fetch audio files');
+            }
+
+            // Call internal TTS endpoint (can use internal URL)
             const response = await axios.post(
                 `${this.apiBaseUrl}/api/v1/asterisk/tts/generate`,
                 {
                     text,
-                    voice: 'amy',
+                    voice: voice || 'amy',
                     speed: 1.0
                 },
                 { timeout: 15000 }
             );
 
-            if (!response.data.audio_url) {
+            if (!response.data || !response.data.audio_url) {
                 throw new Error('TTS did not return audio URL');
             }
 
-            // Convert relative URL to absolute if needed
+            // Convert relative URL to absolute PUBLIC URL (Telnyx needs public URL)
             let audioUrl = response.data.audio_url;
             if (!audioUrl.startsWith('http')) {
-                audioUrl = `${this.apiBaseUrl}${audioUrl}`;
+                // Use public API URL, not internal URL
+                audioUrl = `${publicApiUrl}${audioUrl}`;
+                logger.info(`✅ [TTS] Converted relative URL to public URL: ${audioUrl.substring(0, 80)}...`);
             }
+
+            // Verify URL is publicly accessible (not localhost)
+            if (audioUrl.includes('localhost') || audioUrl.includes('127.0.0.1')) {
+                logger.error(`❌ [TTS] Audio URL is not publicly accessible: ${audioUrl}`);
+                throw new Error(`Audio URL must be publicly accessible. Current: ${audioUrl}`);
+            }
+
+            logger.info(`✅ [TTS] TTS generated successfully`);
+            logger.info(`   Audio URL: ${audioUrl.substring(0, 80)}...`);
 
             return audioUrl;
 
         } catch (error) {
-            logger.error('Error generating TTS:', error.message);
-            throw error;
+            logger.error(`❌ [TTS] Error generating TTS:`, error.message);
+            if (error.response) {
+                logger.error(`   TTS API Error: ${JSON.stringify(error.response.data)}`);
+            }
+
+            // Fallback: Use Telnyx TTS if Piper fails (costs money but works)
+            logger.warn(`⚠️  [TTS] Piper TTS failed, this is a fallback scenario`);
+            throw error; // Re-throw so caller can handle
         }
     }
 
@@ -509,18 +734,23 @@ class TelnyxAIConversation {
                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
             `, [callId, 'ai_conversation', JSON.stringify(eventData)]);
 
-            // Broadcast via WebSocket for live monitoring
-            WebSocketBroadcaster.broadcastToOrganization(organizationId, {
-                type: 'conversation_turn',
-                call_id: callId,
-                user_input: userInput,
-                ai_response: aiResponse,
-                turn: turnNumber,
-                emotion: metadata.emotion,
-                intent: metadata.intent,
-                confidence: metadata.confidence,
-                timestamp: new Date().toISOString()
-            });
+            // Broadcast via WebSocket for live monitoring using proper method
+            try {
+                WebSocketBroadcaster.broadcastConversationTurn(organizationId, callId, {
+                    user_input: userInput,
+                    ai_response: aiResponse,
+                    turn: turnNumber,
+                    emotion: metadata.emotion,
+                    intent: metadata.intent,
+                    confidence: metadata.confidence,
+                    suggested_actions: metadata.suggested_actions,
+                    timestamp: new Date().toISOString()
+                });
+                logger.info(`📡 [WEBSOCKET] Broadcasted conversation turn ${turnNumber} for call ${callId}`);
+            } catch (wsErr) {
+                logger.error(`❌ [WEBSOCKET] Failed to broadcast conversation turn (non-blocking):`, wsErr.message);
+                // Don't throw - conversation turn should still be stored
+            }
 
             logger.info(`📝 Stored conversation turn ${turnNumber} for call ${callId}`);
 

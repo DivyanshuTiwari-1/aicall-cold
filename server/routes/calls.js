@@ -834,12 +834,20 @@ router.post('/automated/start', authenticateToken, requireRole('admin', 'manager
             try {
                 const telnyxCallControl = require('../services/telnyx-call-control');
                 telnyxCallControl.validateConfig();
+                logger.info(`✅ [API] Telnyx configuration validated successfully`);
             } catch (cfgErr) {
-                logger.error('❌ [API] Telnyx configuration invalid:', cfgErr.message || cfgErr);
+                logger.error(`❌ [API] Telnyx configuration invalid: ${cfgErr.message || cfgErr}`);
                 return res.status(400).json({
                     success: false,
                     message: cfgErr.message || 'Telnyx configuration invalid',
-                    code: cfgErr.code || 'TELNYX_CONFIG_INVALID'
+                    code: cfgErr.code || 'TELNYX_CONFIG_INVALID',
+                    details: cfgErr.details || [],
+                    fixInstructions: [
+                        '1. Get your Telnyx API key from: https://portal.telnyx.com/#/app/api-keys',
+                        '2. Get your Connection ID from: https://portal.telnyx.com/#/app/call-control/applications',
+                        '3. Set API_URL to your public server URL (e.g., https://yourdomain.com)',
+                        '4. For testing, use ngrok or similar to expose localhost: ngrok http 3000'
+                    ]
                 });
             }
 
